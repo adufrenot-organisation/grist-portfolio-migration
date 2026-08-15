@@ -53,3 +53,6 @@ Correction de l'import des mappings historiques au format `fields`, notamment `m
 - diagnostic visible dans l'UI ;
 - build `IMPORT v2.4` visible pour éviter les problèmes de cache/déploiement ;
 - redessin des traits après affichage réel de l'onglet.
+
+## v2.5 — cache fix
+Le JavaScript et le CSS ont été renommés (`migration-v2.5.js`, `migration-v2.5.css`) afin d'empêcher GitHub Pages ou le navigateur de réutiliser une ancienne version de `app.js`. Une signature `BUILD 2.5` est visible en bas à gauche.
