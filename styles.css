@@ -54,3 +54,7 @@ button,.primary,input,select,textarea{font:inherit}button{padding:8px 11px;borde
 @media(max-width:1000px){.graph-editor{grid-template-columns:1fr}.graph-canvas-wrap{min-height:180px;border-left:1px solid #dce3ed;border-right:1px solid #dce3ed}.source-pane,.target-pane{border-radius:10px}.rule-grid{grid-template-columns:1fr 1fr}}
 
 .graph-canvas-wrap{overflow:visible!important}.mapping-svg{overflow:visible!important}
+
+.build-badge{font-size:10px;font-weight:700;padding:4px 7px;border-radius:999px;background:#dbeafe;color:#1d4ed8}
+.import-debug{margin:8px 0;padding:8px 10px;border-radius:7px;background:#f1f5f9;color:#475569;font:12px ui-monospace,monospace}
+.import-debug.ok{background:#ecfdf3;color:#166534}.import-debug.error{background:#fef2f2;color:#991b1b}

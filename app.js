@@ -74,7 +74,7 @@ function guessBusiness(k,v){const n=norm(k),t=infer(v);if(n.includes("date"))ret
 $("editMappingBtn").onclick=()=>switchView("mappings");
 $("duplicateBtn").onclick=()=>{const m=activeMapping();if(!m)return;const c=clone(m);c.name=m.name+" - copie";c.mapping_id=slug(c.name)+"_"+Date.now().toString().slice(-4);state.library[state.family].push(c);state.mappingId=c.mapping_id;saveLib();renderMappingSelectors();renderEditor()};
 $("deleteMapBtn").onclick=()=>{const m=activeMapping();if(!m||!confirm("Supprimer "+m.name+" ?"))return;state.library[state.family]=state.library[state.family].filter(x=>x.mapping_id!==m.mapping_id);state.mappingId=state.library[state.family][0]?.mapping_id||null;saveLib();renderMappingSelectors();renderEditor()};
-$("importMapBtn").onclick=()=>$("mapFile").click();$("mapFile").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{let m=normalize(JSON.parse(r.result),state.family);let fam=["produit","projet","autre"].includes(m.mapping_type)?m.mapping_type:"autre";m.mapping_type=fam;if(state.library[fam].some(x=>x.mapping_id===m.mapping_id))m.mapping_id+="_"+Date.now().toString().slice(-4);state.library[fam].push(m);state.family=fam;state.mappingId=m.mapping_id;saveLib();renderMappingSelectors();renderEditor()}catch(x){msg("Mapping invalide")}};r.readAsText(f)};
+$("importMapBtn").onclick=()=>$("mapFile").click();
 $("exportMapBtn").onclick=()=>{const m=activeMapping();if(m)download(m,slug(m.name)+".json")};
 
 function renderEditor(){
@@ -342,44 +342,157 @@ graphMappingFields=function(){
   ])];
 };
 
-$("mapFile").onchange=e=>{
-  const file=e.target.files?.[0]; if(!file)return;
+
+
+
+// ===== v2.4 : IMPORT UNIQUE, DIAGNOSTIQUE ET COMPATIBLE =====
+function importMappingV24(raw){
+  if(!raw || Array.isArray(raw) || typeof raw!=="object"){
+    throw new Error("racine JSON attendue = objet");
+  }
+  const famRaw=String(raw.mapping_type||"autre").toLowerCase();
+  const fam=["produit","projet","autre"].includes(famRaw)?famRaw:"autre";
+  const m=clone(raw);
+  m.mapping_type=fam;
+  m.mapping_id=m.mapping_id||slug(m.name||"mapping_importe");
+  m.name=m.name||m.mapping_id;
+  m.description=m.description||m.source?.document_type||"";
+
+  // Convertit le format historique fields -> rules
+  if(!Array.isArray(m.rules)){
+    m.rules=[];
+    for(const [technicalKey,f] of Object.entries(m.fields||{})){
+      if(!f || typeof f!=="object") continue;
+      const gt=f.target_type||f.grist_type||f.type||"";
+      let bt="Texte";
+      if(String(gt).startsWith("RefList:")) bt="Liste de références";
+      else if(String(gt).startsWith("Ref:")) bt="Référence";
+      else if(gt==="Date") bt="Date";
+      else if(gt==="Bool") bt="Booléen";
+      else if(gt==="Numeric") bt="Nombre";
+      else if(gt==="Choice") bt="Statut";
+      else if(f.expected_semantic_type==="Text") bt="Texte";
+
+      m.rules.push({
+        source:f.json_field||technicalKey,
+        target_table:f.target_table||m.target?.table||"",
+        target_column:f.target_column||f.grist_column||"",
+        business_type:bt,
+        grist_type:gt,
+        identify:f.identify||"",
+        ref_table:f.reference?.table||"",
+        ref_match:f.reference?.lookup_column||f.reference?.match_column||"Nom",
+        create_if_missing:Boolean(f.reference?.create_if_missing??f.create_if_missing??false),
+        required:Boolean(f.required??false),
+        when_missing:f.when_missing||f.when_missing_on_update||"",
+        transform:f.transform??null,
+        original_field_key:technicalKey,
+        original_definition:clone(f)
+      });
+    }
+  }
+
+  // Expose aussi les champs identifiés mais non mappés.
+  m.unmapped_source_fields=m.unmapped_source_fields||{};
+  for(const [k,f] of Object.entries(m.source_fields_without_current_grist_target||{})){
+    const jf=(f&&f.json_field)||k;
+    m.unmapped_source_fields[jf]=clone(f||{});
+  }
+
+  // Reconstruit les cibles connues à partir des règles afin de pouvoir
+  // afficher la table et les colonnes AVANT connexion à Grist.
+  m.targets=Array.isArray(m.targets)?m.targets:[];
+  for(const r of m.rules){
+    if(r.target_table && r.target_column &&
+       !m.targets.some(t=>t.table===r.target_table && t.column===r.target_column)){
+      m.targets.push({table:r.target_table,column:r.target_column,type:r.grist_type||""});
+    }
+  }
+  if(m.target?.table && !m.targets.some(t=>t.table===m.target.table)){
+    // Le tableau targets peut être vide pour une table sans colonnes mappées.
+    m.targets.push({table:m.target.table,column:"",type:""});
+  }
+
+  if(!m.mapping_id) throw new Error("mapping_id absent");
+  if(!m.rules.length && !Object.keys(m.unmapped_source_fields).length){
+    throw new Error("aucun champ/règle détecté dans fields, rules ou source_fields_without_current_grist_target");
+  }
+  return m;
+}
+
+function installMappingV24(m){
+  const fam=m.mapping_type;
+  state.library[fam]=state.library[fam]||[];
+
+  let id=m.mapping_id;
+  const existing=state.library[fam].findIndex(x=>x.mapping_id===id);
+  if(existing>=0){
+    const replace=confirm(
+      `Le mapping "${id}" existe déjà.\n\n`+
+      `OK = remplacer le mapping existant\n`+
+      `Annuler = importer comme copie`
+    );
+    if(replace){
+      state.library[fam][existing]=m;
+    }else{
+      const base=id; let n=2;
+      while(state.library[fam].some(x=>x.mapping_id===id)) id=base+"_"+n++;
+      m.mapping_id=id;
+      m.name=(m.name||base)+" - copie";
+      state.library[fam].push(m);
+    }
+  }else{
+    state.library[fam].push(m);
+  }
+
+  state.family=fam;
+  state.mappingId=m.mapping_id;
+  graphState.selectedRule=-1;
+  graphState.displayTable=m.target?.table || m.rules.find(r=>r.target_table)?.target_table || "";
+  saveLib();
+
+  // IMPORTANT : rendre la vue visible d'abord, puis calculer géométrie et traits.
+  switchView("mappings");
+  renderMappingSelectors();
+  requestAnimationFrame(()=>{
+    renderEditor();
+    requestAnimationFrame(()=>{
+      graphRender();
+      graphDraw();
+      setTimeout(graphDraw,80);
+    });
+  });
+}
+
+$("mapFile").addEventListener("change", e=>{
+  const file=e.target.files && e.target.files[0];
+  if(!file) return;
   const reader=new FileReader();
   reader.onload=()=>{
     try{
-      const imported=importMappingCompatible(JSON.parse(reader.result));
-      const fam=imported.mapping_type;
-      state.library[fam]=state.library[fam]||[];
-      let id=imported.mapping_id, n=2;
-      if(state.library[fam].some(x=>x.mapping_id===id)){
-        const replace=confirm(`Le mapping "${id}" existe déjà.\n\nOK = remplacer\nAnnuler = importer comme copie`);
-        if(replace){
-          state.library[fam][state.library[fam].findIndex(x=>x.mapping_id===id)]=imported;
-        }else{
-          const base=id;
-          while(state.library[fam].some(x=>x.mapping_id===id)) id=base+"_"+n++;
-          imported.mapping_id=id;
-          imported.name=(imported.name||base)+" - copie";
-          state.library[fam].push(imported);
-        }
-      }else state.library[fam].push(imported);
-      state.family=fam; state.mappingId=imported.mapping_id;
-      graphState.displayTable=imported.target?.table||imported.rules.find(r=>r.target_table)?.target_table||"";
-      saveLib();
-      // Afficher d'abord l'onglet pour que le navigateur calcule les vraies dimensions.
-      switchView("mappings");
-      renderMappingSelectors();
-      requestAnimationFrame(()=>{
-        renderEditor();
-        requestAnimationFrame(()=>{ graphRender(); graphDraw(); });
-      });
-      msg(`Mapping chargé : ${imported.name} · ${imported.rules.length} liaison(s)`);
+      const raw=JSON.parse(String(reader.result));
+      const m=importMappingV24(raw);
+      installMappingV24(m);
+      msg(`Mapping chargé : ${m.name} · ${m.rules.length} liaison(s) · cible ${m.target?.table||"multi-table"}`);
+      const dbg=$("importDebug");
+      if(dbg){
+        dbg.className="import-debug ok";
+        dbg.textContent=`OK · ${file.name} · ${m.rules.length} liaison(s) · table principale : ${m.target?.table||"—"}`;
+      }
     }catch(err){
-      console.error(err);
-      msg("Impossible de charger le mapping : "+err.message);
+      console.error("IMPORT MAPPING v2.4",err);
+      msg("Import impossible : "+err.message);
+      const dbg=$("importDebug");
+      if(dbg){
+        dbg.className="import-debug error";
+        dbg.textContent="Erreur import : "+err.message;
+      }
     }finally{
       e.target.value="";
     }
   };
+  reader.onerror=()=>{
+    msg("Impossible de lire le fichier.");
+  };
   reader.readAsText(file,"utf-8");
-};
+});

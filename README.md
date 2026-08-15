@@ -45,3 +45,11 @@ Correction de l'import des mappings historiques au format `fields`, notamment `m
 - les traits sont redessinés après mise en page ;
 - le canvas ne masque plus les connexions ;
 - après connexion Grist, toutes les colonnes réelles de la table remplacent/complètent celles connues du mapping.
+
+## v2.4 — correction définitive import mapping
+- suppression des anciens gestionnaires d'import concurrents ;
+- un seul importeur compatible `fields` historique et `rules` v2 ;
+- affichage immédiat de `target.table` et des colonnes connues sans connexion Grist ;
+- diagnostic visible dans l'UI ;
+- build `IMPORT v2.4` visible pour éviter les problèmes de cache/déploiement ;
+- redessin des traits après affichage réel de l'onglet.
