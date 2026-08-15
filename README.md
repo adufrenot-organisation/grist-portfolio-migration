@@ -20,3 +20,15 @@ Refonte basée sur le cahier des charges validé.
 
 ## Important
 L'exécution réelle d'upserts est volontairement protégée dans cette version : le bouton n'écrit pas encore les données. La prochaine étape consiste à brancher les clés de matching, la comparaison CREATE/UPDATE/SAME et la résolution interactive des Ref avant d'autoriser les écritures.
+
+
+## v2.1 — éditeur graphique multi-table
+
+- Les connexions sont à nouveau graphiques et manipulables à la souris.
+- On choisit n’importe quelle table du schéma Grist chargé.
+- Toutes les colonnes de la table sélectionnée restent visibles, même si elles ne sont pas mappées.
+- Un même mapping peut viser plusieurs tables différentes.
+- Glisser un champ JSON vers une colonne crée une liaison.
+- Double-clic ou clic droit sur un trait supprime la liaison.
+- Cliquer sur un trait ouvre l’inspecteur de règles.
+- Les règles Ref, le type métier et la consigne `identify` restent éditables.

@@ -120,3 +120,149 @@ $("testConnBtn").onclick=loadSchema;
 async function api(path,opt={}){const c=JSON.parse(localStorage.getItem(CONNKEY)||"{}");const r=await fetch(c.server+path,{...opt,headers:{Authorization:"Bearer "+c.key,"Content-Type":"application/json",...(opt.headers||{})}});if(!r.ok)throw new Error("HTTP "+r.status+" "+await r.text());return r.json()}
 async function loadSchema(){saveConn();const c=JSON.parse(localStorage.getItem(CONNKEY)||"{}");try{const t=await api(`/api/docs/${encodeURIComponent(c.doc)}/tables`);state.schema={};for(const table of t.tables||[]){const x=await api(`/api/docs/${encodeURIComponent(c.doc)}/tables/${encodeURIComponent(table.id)}/columns?hidden=true`);state.schema[table.id]=x.columns||[]} $("connStatus").textContent=`Connecté · ${Object.keys(state.schema).length} table(s) chargée(s)`;renderEditor();suggestMapping();msg("Schéma Grist chargé")}catch(e){$("connStatus").textContent="Erreur : "+e.message}}
 init();
+
+// ===== v2.1 : éditeur graphique multi-table =====
+let graphState={selectedRule:-1,dragSource:null,tempPoint:null,displayTable:""};
+
+function graphEsc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function graphMappingFields(){
+  const m=activeMapping(); if(!m)return [];
+  return [...new Set([...(m.rules||[]).map(r=>r.source),...fieldsOf(state.dataWork)])];
+}
+function graphAllTables(){
+  const m=activeMapping();
+  return [...new Set([
+    ...Object.keys(state.schema||{}),
+    ...(m?.targets||[]).map(t=>t.table),
+    ...(m?.rules||[]).map(r=>r.target_table)
+  ].filter(Boolean))];
+}
+function graphCurrentTable(){
+  const m=activeMapping(),tables=graphAllTables();
+  if(graphState.displayTable && tables.includes(graphState.displayTable))return graphState.displayTable;
+  return (m?.rules||[]).find(r=>r.target_table)?.target_table || tables[0] || m?.target?.table || "";
+}
+function graphColumnsForTable(table){
+  const cols=(state.schema?.[table]||[]).map(c=>({
+    table,
+    column:c.id||c.colId||c.label||c.fields?.label,
+    type:c.type||c.fields?.type||"",
+    label:c.label||c.fields?.label||c.id||c.colId
+  })).filter(c=>c.column);
+  const m=activeMapping();
+  (m?.targets||[]).filter(t=>t.table===table).forEach(t=>{
+    if(!cols.some(c=>c.column===t.column))cols.push({table,column:t.column,type:t.type||"",label:t.column});
+  });
+  (m?.rules||[]).filter(r=>r.target_table===table&&r.target_column).forEach(r=>{
+    if(!cols.some(c=>c.column===r.target_column))cols.push({table,column:r.target_column,type:r.grist_type||"",label:r.target_column});
+  });
+  return cols;
+}
+function graphRenderTableSelect(){
+  const sel=$("targetTableSelect"); if(!sel)return;
+  const tables=graphAllTables();
+  graphState.displayTable=graphCurrentTable();
+  sel.innerHTML=tables.map(t=>`<option value="${graphEsc(t)}">${graphEsc(t)}</option>`).join("");
+  if(graphState.displayTable)sel.value=graphState.displayTable;
+  $("targetTableCaption").textContent=graphState.displayTable?`${graphState.displayTable} · toutes les colonnes restent visibles`:"Connecte Grist ou ajoute une cible manuelle";
+}
+function graphRender(){
+  const m=activeMapping();
+  renderMappingSelectors();
+  if(!m){$("sourceFields").innerHTML="Aucun mapping";$("targetFields").innerHTML="";return}
+  graphRenderTableSelect();
+  const table=graphState.displayTable=graphCurrentTable(),sources=graphMappingFields(),rules=m.rules||[];
+  $("sourceFields").innerHTML=sources.map(s=>{
+    const idxs=rules.map((r,i)=>r.source===s?i:-1).filter(i=>i>=0);
+    const isSel=idxs.includes(graphState.selectedRule);
+    return `<div class="graph-card ${idxs.length?"mapped":""} ${isSel?"selected":""}">
+      <div class="meta"><div class="title">${graphEsc(s)}</div><div class="sub">${infer(rowsOf(state.dataWork)[0]?.[s])}${idxs.length?` · ${idxs.length} liaison(s)`:" · non mappé"}</div></div>
+      ${idxs.length?`<span class="mapping-badge">${idxs.length}</span>`:""}
+      <span class="port source-port" data-source="${graphEsc(s)}" title="Glisser vers une colonne"></span>
+    </div>`;
+  }).join("") || "<div class=summary>Aucun champ JSON. Charge un JSON ou ajoute un champ.</div>";
+
+  const cols=graphColumnsForTable(table);
+  $("targetFields").innerHTML=cols.map(c=>{
+    const used=rules.some(r=>r.target_table===table&&r.target_column===c.column);
+    const selected=rules[graphState.selectedRule]?.target_table===table&&rules[graphState.selectedRule]?.target_column===c.column;
+    return `<div class="graph-card ${used?"mapped":""} ${selected?"selected":""}">
+      <span class="port target-port" data-table="${graphEsc(table)}" data-column="${graphEsc(c.column)}" title="Déposer ici"></span>
+      <div class="meta"><div class="title">${graphEsc(c.label||c.column)}</div><div class="sub">${graphEsc(c.column)} · ${graphEsc(c.type||"type inconnu")}</div></div>
+      ${used?`<span class="mapping-badge">mappé</span>`:`<span class="sub">non mappé</span>`}
+    </div>`;
+  }).join("") || "<div class=summary>Aucune colonne disponible pour cette table.</div>";
+  setTimeout(graphDraw,0); graphInspector();
+}
+function graphPoint(rule){
+  const sc=[...document.querySelectorAll(".source-port")].find(x=>x.dataset.source===rule.source);
+  const tc=[...document.querySelectorAll(".target-port")].find(x=>x.dataset.table===rule.target_table&&x.dataset.column===rule.target_column);
+  const wrap=$("graphCanvasWrap"); if(!sc||!tc||!wrap)return null;
+  const wr=wrap.getBoundingClientRect(),sr=sc.getBoundingClientRect(),tr=tc.getBoundingClientRect();
+  return {x1:sr.left+sr.width/2-wr.left,y1:sr.top+sr.height/2-wr.top,x2:tr.left+tr.width/2-wr.left,y2:tr.top+tr.height/2-wr.top};
+}
+function graphCurve(p){const dx=Math.max(50,Math.abs(p.x2-p.x1)*.5);return `M ${p.x1} ${p.y1} C ${p.x1+dx} ${p.y1}, ${p.x2-dx} ${p.y2}, ${p.x2} ${p.y2}`}
+function graphDraw(){
+  const svg=$("mappingSvg"),m=activeMapping(),wrap=$("graphCanvasWrap"); if(!svg||!m||!wrap)return;
+  svg.setAttribute("viewBox",`0 0 ${wrap.clientWidth} ${wrap.clientHeight}`); let html="";
+  (m.rules||[]).forEach((r,i)=>{if(r.target_table!==graphState.displayTable||!r.target_column)return;const p=graphPoint(r);if(p)html+=`<path class="mapping-path ${i===graphState.selectedRule?"selected":""}" data-rule="${i}" d="${graphCurve(p)}"></path>`});
+  if(graphState.dragSource&&graphState.tempPoint){
+    const sc=[...document.querySelectorAll(".source-port")].find(x=>x.dataset.source===graphState.dragSource);
+    if(sc){const wr=wrap.getBoundingClientRect(),sr=sc.getBoundingClientRect(),p={x1:sr.left+sr.width/2-wr.left,y1:sr.top+sr.height/2-wr.top,x2:graphState.tempPoint.x,y2:graphState.tempPoint.y};html+=`<path class="mapping-path temp" d="${graphCurve(p)}"></path>`}
+  }
+  svg.innerHTML=html;
+  svg.querySelectorAll(".mapping-path:not(.temp)").forEach(p=>{
+    p.onclick=()=>{graphState.selectedRule=+p.dataset.rule;graphRender()};
+    p.ondblclick=()=>graphRemoveRule(+p.dataset.rule);
+    p.oncontextmenu=e=>{e.preventDefault();graphRemoveRule(+p.dataset.rule)};
+  });
+}
+function graphAddConnection(source,table,column){
+  const m=activeMapping(); if(!m)return;
+  const existing=(m.rules||[]).findIndex(r=>r.source===source&&r.target_table===table&&r.target_column===column);
+  if(existing>=0){graphState.selectedRule=existing;graphRender();return}
+  const col=graphColumnsForTable(table).find(c=>c.column===column);
+  m.rules=m.rules||[];
+  m.rules.push({source,target_table:table,target_column:column,business_type:guessBusiness(source,rowsOf(state.dataWork)[0]?.[source]),grist_type:col?.type||"",identify:"",ref_table:(col?.type||"").startsWith("Ref:")?(col.type.split(":")[1]||""):"",ref_match:"Nom",create_if_missing:(col?.type||"").startsWith("Ref:")});
+  graphState.selectedRule=m.rules.length-1; saveLib(); graphRender(); msg(`${source} → ${table}.${column}`);
+}
+function graphRemoveRule(i){
+  const m=activeMapping(); if(!m||!m.rules?.[i])return;
+  m.rules.splice(i,1);graphState.selectedRule=-1;saveLib();graphRender();msg("Liaison supprimée");
+}
+function graphInspector(){
+  const box=$("ruleInspector"),m=activeMapping(),r=m?.rules?.[graphState.selectedRule]; if(!box)return;
+  if(!r){box.innerHTML='<div class="rule-inspector-empty">Sélectionne une liaison pour éditer ses règles.</div>';return}
+  const tables=graphAllTables(),cols=graphColumnsForTable(r.target_table);
+  box.innerHTML=`<div class="rule-grid">
+    <div><label>Champ JSON</label><input id="riSource" value="${graphEsc(r.source)}"></div>
+    <div><label>Table cible</label><select id="riTable">${tables.map(t=>`<option ${t===r.target_table?"selected":""}>${graphEsc(t)}</option>`).join("")}</select></div>
+    <div><label>Colonne cible</label><select id="riColumn">${cols.map(c=>`<option ${c.column===r.target_column?"selected":""}>${graphEsc(c.column)}</option>`).join("")}</select></div>
+    <div><label>Type métier</label><select id="riBusiness">${BUSINESS_TYPES.map(x=>`<option ${x===r.business_type?"selected":""}>${x}</option>`).join("")}</select></div>
+    <div><label>Type Grist</label><input id="riGristType" value="${graphEsc(r.grist_type||"")}"></div>
+    <div><label>Table de référence</label><input id="riRefTable" value="${graphEsc(r.ref_table||"")}"></div>
+    <div><label>Champ de rapprochement Ref</label><input id="riRefMatch" value="${graphEsc(r.ref_match||"Nom")}"></div>
+    <div><label>Créer la Ref si absente</label><select id="riCreateRef"><option value="false" ${!r.create_if_missing?"selected":""}>Non</option><option value="true" ${r.create_if_missing?"selected":""}>Oui</option></select></div>
+    <div style="grid-column:1/-1"><label>Ce que l'IA doit identifier dans le document</label><textarea id="riIdentify">${graphEsc(r.identify||"")}</textarea></div>
+  </div><div class="rule-actions"><button id="riDelete" class="danger">Supprimer la liaison</button><button id="riSave" class="primary">Enregistrer les règles</button></div>`;
+  $("riTable").onchange=()=>{r.target_table=$("riTable").value;graphState.displayTable=r.target_table;saveLib();graphRender()};
+  $("riSave").onclick=()=>{r.source=$("riSource").value.trim();r.target_table=$("riTable").value;r.target_column=$("riColumn").value;r.business_type=$("riBusiness").value;r.grist_type=$("riGristType").value.trim();r.ref_table=$("riRefTable").value.trim();r.ref_match=$("riRefMatch").value.trim();r.create_if_missing=$("riCreateRef").value==="true";r.identify=$("riIdentify").value;saveLib();graphRender();msg("Règle enregistrée")};
+  $("riDelete").onclick=()=>graphRemoveRule(graphState.selectedRule);
+}
+document.addEventListener("mousedown",e=>{const p=e.target.closest(".source-port");if(p)graphState.dragSource=p.dataset.source});
+document.addEventListener("mousemove",e=>{if(!graphState.dragSource)return;const wr=$("graphCanvasWrap")?.getBoundingClientRect();if(!wr)return;graphState.tempPoint={x:e.clientX-wr.left,y:e.clientY-wr.top};graphDraw()});
+document.addEventListener("mouseup",e=>{if(!graphState.dragSource)return;const target=e.target.closest(".target-port"),source=graphState.dragSource;graphState.dragSource=null;graphState.tempPoint=null;if(target)graphAddConnection(source,target.dataset.table,target.dataset.column);else graphDraw()});
+$("targetTableSelect").onchange=e=>{graphState.displayTable=e.target.value;graphRender()};
+$("addManualTargetBtn").onclick=()=>{const m=activeMapping();if(!m)return;const table=prompt("Table cible :",graphState.displayTable||"");if(!table)return;const column=prompt("Colonne cible :");if(!column)return;const type=prompt("Type Grist :","Text")||"Text";m.targets=m.targets||[];m.targets.push({table,column,type});graphState.displayTable=table;saveLib();graphRender()};
+$("clearConnectionsBtn").onclick=()=>{const m=activeMapping();if(!m||!confirm("Supprimer toutes les liaisons de ce mapping ?"))return;m.rules=[];graphState.selectedRule=-1;saveLib();graphRender()};
+window.addEventListener("resize",()=>setTimeout(graphDraw,0));
+
+// override old editor
+renderEditor=function(){
+  renderMappingSelectors();
+  const m=activeMapping();
+  if(!m){$("sourceFields").innerHTML="Aucun mapping";$("targetFields").innerHTML="";return}
+  $("mapName").value=m.name;$("mapId").value=m.mapping_id;$("mapDescription").value=m.description||"";
+  $("mappingJson").value=JSON.stringify(m,null,2);
+  graphRender();
+};

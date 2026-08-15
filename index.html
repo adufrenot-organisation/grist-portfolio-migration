@@ -7,7 +7,7 @@
 </head>
 <body>
 <header>
-  <div><b>🔄 GRIST. MIGRATION PMO</b><span class="version">v2.0.0</span></div>
+  <div><b>🔄 GRIST. MIGRATION PMO</b><span class="version">v2.1.0</span></div>
   <nav>
     <button class="tab active" data-view="workspace">Atelier</button>
     <button class="tab" data-view="mappings">Mappings</button>
@@ -58,11 +58,44 @@
     <input id="mapName" placeholder="Nom du mapping"><input id="mapId" placeholder="Identifiant technique">
     <input id="mapDescription" placeholder="Description">
   </div>
-  <div class="mapping-editor">
-    <div class="column"><div class="colhead"><b>JSON SOURCE</b><button id="addSourceBtn">＋ champ</button></div><div id="sourceFields"></div></div>
-    <div class="column wide"><div class="colhead"><b>LIAISONS & RÈGLES</b><span>Choisis table, colonne et type métier.</span></div><div id="rules"></div></div>
-    <div class="column"><div class="colhead"><b>SCHÉMA CIBLE</b><button id="addTargetBtn">＋ cible</button></div><div id="targetFields"></div></div>
+  
+  <div class="mapping-tools">
+    <div>
+      <label>Table Grist affichée</label>
+      <select id="targetTableSelect"></select>
+    </div>
+    <div class="mapping-tools-actions">
+      <button id="addSourceBtn">＋ Champ JSON</button>
+      <button id="addManualTargetBtn">＋ Colonne cible manuelle</button>
+      <button id="clearConnectionsBtn">Effacer les liaisons</button>
+    </div>
   </div>
+
+  <div id="graphEditor" class="graph-editor">
+    <div class="graph-pane source-pane">
+      <div class="graph-head">
+        <div><b>CHAMPS JSON</b><small>Tire une liaison depuis le point bleu.</small></div>
+      </div>
+      <div id="sourceFields" class="graph-list"></div>
+    </div>
+
+    <div id="graphCanvasWrap" class="graph-canvas-wrap">
+      <svg id="mappingSvg" class="mapping-svg"></svg>
+      <div id="connectionHint" class="connection-hint">Glisser-déposer pour mapper</div>
+    </div>
+
+    <div class="graph-pane target-pane">
+      <div class="graph-head">
+        <div><b>TABLE CIBLE</b><small id="targetTableCaption">Toutes les colonnes restent visibles.</small></div>
+      </div>
+      <div id="targetFields" class="graph-list"></div>
+    </div>
+  </div>
+
+  <div id="ruleInspector" class="rule-inspector">
+    <div class="rule-inspector-empty">Sélectionne une liaison pour éditer ses règles.</div>
+  </div>
+
   <div class="jsonbox"><details><summary>JSON avancé du mapping</summary><textarea id="mappingJson"></textarea><button id="applyMappingJson">Appliquer le JSON</button></details></div>
 </section>
 
