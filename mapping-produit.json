@@ -1,0 +1,330 @@
+{
+  "mapping_id": "produit_fonctionnalites_v1",
+  "mapping_type": "produit",
+  "source": {
+    "document_type": "fiche_produit_pdf",
+    "entity": "fonctionnalite",
+    "record_granularity": "une ligne ou un bloc fonctionnel = une fonctionnalite",
+    "extraction_policy": {
+      "do_not_invent": true,
+      "missing_value": null,
+      "keep_source_wording": true,
+      "allow_inference": false,
+      "notes": "Une valeur n'est renseignée que si elle est identifiable dans le document ou par une règle explicite du mapping."
+    }
+  },
+  "target": {
+    "table": "Fonctionnalites",
+    "schema_changes_allowed": false,
+    "ignore_columns": [
+      "id",
+      "manualSort",
+      "gristHelper_Display",
+      "gristHelper_Display2",
+      "gristHelper_Display3"
+    ]
+  },
+  "matching": {
+    "mode": "upsert",
+    "preferred_key": [
+      "parent",
+      "code"
+    ],
+    "fallback_key": [
+      "parent",
+      "nom"
+    ],
+    "on_ambiguous_match": "error",
+    "on_missing_match": "create"
+  },
+  "fields": {
+    "parent": {
+      "json_field": "produit",
+      "target_column": "Parent",
+      "target_type": "Ref:Projects",
+      "identify": "Nom du produit, projet ou parent auquel la fonctionnalité appartient.",
+      "examples_from_current_pdf": [
+        "MON AP-HP",
+        "LORAH"
+      ],
+      "required": true,
+      "when_missing": "error",
+      "reference": {
+        "table": "Projects",
+        "lookup_column": "nom",
+        "lookup_normalization": [
+          "trim",
+          "casefold",
+          "collapse_spaces"
+        ],
+        "create_if_missing": true,
+        "create_fields": {
+          "nom": "$value",
+          "Type": "Produit",
+          "actif": true
+        }
+      }
+    },
+    "stade": {
+      "json_field": "stade",
+      "target_column": "Stade",
+      "target_type": "Ref:Stades_Fonctionnalite",
+      "identify": "Stade, état de maturité ou état de cycle de vie explicitement associé à la fonctionnalité. Ne pas déduire automatiquement un stade à partir d'un simple mot sauf règle explicite.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "when_missing": "leave_unchanged_on_update_null_on_create",
+      "reference": {
+        "table": "Stades_Fonctionnalite",
+        "lookup_column": "Nom",
+        "lookup_normalization": [
+          "trim",
+          "casefold",
+          "collapse_spaces"
+        ],
+        "create_if_missing": true,
+        "create_fields": {
+          "Nom": "$value"
+        }
+      }
+    },
+    "nom": {
+      "json_field": "fonctionnalite",
+      "target_column": "Nom",
+      "target_type": "Numeric",
+      "expected_semantic_type": "Text",
+      "identify": "Nom ou libellé principal de la fonctionnalité.",
+      "examples_from_current_pdf": [
+        "Adaptation du SSO pour les MFA mobile",
+        "Affichage des RDV ORBIS"
+      ],
+      "required": true,
+      "when_missing": "error",
+      "warning": "Dans le schéma Grist actuel, Fonctionnalites.Nom est typé Numeric alors que son contenu attendu est textuel."
+    },
+    "code": {
+      "json_field": "id",
+      "target_column": "Code",
+      "target_type": "Text",
+      "identify": "Identifiant ou code stable de la fonctionnalité dans le document source. Dans la fiche Produit actuelle, il correspond à la colonne Id Produit.",
+      "examples_from_current_pdf": [
+        1,
+        6,
+        23
+      ],
+      "required": false,
+      "transform": "to_string",
+      "when_missing": "fallback_to_parent_plus_normalized_name"
+    },
+    "priorite": {
+      "json_field": "priorite",
+      "target_column": "Priorite",
+      "target_type": "Choice",
+      "identify": "Niveau ou marqueur de priorité explicitement associé à la fonctionnalité.",
+      "examples_from_current_pdf": [
+        "!!!",
+        "?"
+      ],
+      "required": false,
+      "when_missing": "leave_unchanged_on_update_null_on_create",
+      "choice_policy": {
+        "if_value_not_in_choices": "add_choice_then_write"
+      }
+    },
+    "description": {
+      "json_field": "description",
+      "target_column": "Description",
+      "target_type": "Any",
+      "identify": "Description détaillée, précision, sous-titre ou texte explicatif propre à la fonctionnalité, distinct de son nom.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "when_missing": "leave_unchanged_on_update_null_on_create"
+    },
+    "progression": {
+      "json_field": "progression",
+      "target_column": "Progression",
+      "target_type": "Numeric",
+      "identify": "Pourcentage ou niveau d'avancement chiffré de la fonctionnalité, uniquement s'il est explicitement indiqué.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "accepted_formats": [
+        "number",
+        "percentage"
+      ],
+      "transform": "normalize_percentage_or_number",
+      "when_missing": "leave_unchanged_on_update_null_on_create"
+    },
+    "date_cible": {
+      "json_field": "echeance",
+      "target_column": "Date_Cible",
+      "target_type": "Date",
+      "identify": "Date ou période cible explicitement indiquée pour la fonctionnalité. Dans la fiche Produit actuelle, valeurs de type YYYY-Tn.",
+      "examples_from_current_pdf": [
+        "2026-T4",
+        "2027-T1",
+        "2028-T4"
+      ],
+      "required": false,
+      "transform": {
+        "type": "period_to_date",
+        "quarter_rule": "end_of_quarter",
+        "rules": {
+          "T1": "03-31",
+          "T2": "06-30",
+          "T3": "09-30",
+          "T4": "12-31"
+        },
+        "special_values": {
+          "Abandon": null,
+          "?": null
+        }
+      },
+      "when_missing": "leave_unchanged_on_update_null_on_create"
+    },
+    "responsable": {
+      "json_field": "responsable",
+      "target_column": "Responsable",
+      "target_type": "Ref:Team",
+      "identify": "Nom de la personne ou ressource explicitement désignée comme responsable de la fonctionnalité.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "when_missing": "leave_unchanged_on_update_null_on_create",
+      "reference": {
+        "table": "Team",
+        "lookup_column": "nom",
+        "lookup_normalization": [
+          "trim",
+          "casefold",
+          "collapse_spaces"
+        ],
+        "create_if_missing": true,
+        "create_fields": {
+          "nom": "$value",
+          "actif": true
+        }
+      }
+    },
+    "actif": {
+      "json_field": "actif",
+      "target_column": "Actif",
+      "target_type": "Bool",
+      "identify": "Indication explicite permettant de déterminer si la fonctionnalité est active, abandonnée, annulée ou désactivée.",
+      "examples_from_current_pdf": [
+        "[Abandon]"
+      ],
+      "required": false,
+      "derivation_rules": [
+        {
+          "if_source_status_in": [
+            "Abandon",
+            "Abandonné",
+            "Abandonnee",
+            "Abandonnée",
+            "Annulé",
+            "Annulée"
+          ],
+          "value": false
+        }
+      ],
+      "default_on_create": true,
+      "when_missing_on_update": "leave_unchanged"
+    },
+    "date_debut": {
+      "json_field": "date_debut",
+      "target_column": "Date_Debut",
+      "target_type": "Date",
+      "identify": "Date ou période de début explicitement indiquée pour la fonctionnalité. Peut provenir d'une trajectoire graphique seulement si la règle de lecture du planning est certaine.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "transform": {
+        "type": "period_to_date",
+        "quarter_rule": "start_of_quarter",
+        "rules": {
+          "T1": "01-01",
+          "T2": "04-01",
+          "T3": "07-01",
+          "T4": "10-01"
+        }
+      },
+      "when_missing": "leave_unchanged_on_update_null_on_create"
+    },
+    "date_fin": {
+      "json_field": "date_fin",
+      "target_column": "Date_Fin",
+      "target_type": "Date",
+      "identify": "Date ou période de fin explicitement indiquée pour la fonctionnalité. Peut provenir d'une trajectoire graphique seulement si la règle de lecture du planning est certaine.",
+      "examples_from_current_pdf": [],
+      "required": false,
+      "transform": {
+        "type": "period_to_date",
+        "quarter_rule": "end_of_quarter",
+        "rules": {
+          "T1": "03-31",
+          "T2": "06-30",
+          "T3": "09-30",
+          "T4": "12-31"
+        }
+      },
+      "when_missing": "leave_unchanged_on_update_null_on_create"
+    }
+  },
+  "source_fields_without_current_grist_target": {
+    "categorie": {
+      "json_field": "categorie",
+      "identify": "Catégorie explicitement associée à la fonctionnalité.",
+      "examples_from_current_pdf": [
+        "Dette technique",
+        "Connexion",
+        "Parcours administratif",
+        "ALOE",
+        "Guichet de services",
+        "ALOE / Trajectoire RDV",
+        "Administration",
+        "Fonctionnalités"
+      ],
+      "status": "identified_but_unmapped",
+      "action": "preserve_in_extraction_json"
+    },
+    "difficulte": {
+      "json_field": "difficulte",
+      "identify": "Difficulté, taille ou effort explicitement indiqué pour la fonctionnalité.",
+      "examples_from_current_pdf": [
+        "S",
+        "L",
+        "XXL"
+      ],
+      "status": "identified_but_unmapped",
+      "action": "preserve_in_extraction_json"
+    },
+    "statut_source": {
+      "json_field": "statut",
+      "identify": "Statut textuel explicitement indiqué dans le document source, par exemple Abandon.",
+      "examples_from_current_pdf": [
+        "Abandon"
+      ],
+      "status": "used_for_derivation",
+      "action": "preserve_in_extraction_json_and_use_for_actif"
+    }
+  },
+  "update_policy": {
+    "null_means": "not_identified",
+    "on_update_null": "do_not_erase_existing_value",
+    "on_create_null": "leave_empty",
+    "explicit_empty_marker": "__CLEAR__",
+    "explicit_empty_action": "clear_target_value"
+  },
+  "reference_policy": {
+    "resolve_by_display_name": true,
+    "create_missing_references": true,
+    "do_not_create_reference_when_source_value_is_null": true,
+    "on_multiple_matches": "error"
+  },
+  "validation": {
+    "reject_unknown_target_columns": true,
+    "reject_schema_modification": true,
+    "required_json_fields_for_create": [
+      "produit",
+      "fonctionnalite"
+    ],
+    "warn_on_unmapped_identified_fields": true
+  }
+}

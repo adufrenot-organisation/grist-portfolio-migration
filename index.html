@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GRIST. MIGRATION PMO</title>
+  <link rel="stylesheet" href="styles.css?v=1.0.0">
+</head>
+<body>
+<div id="app">
+  <header>
+    <b>🔄 GRIST. MIGRATION PMO</b>
+    <span>v1.0.0</span>
+    <nav>
+      <button class="tab active">Import / Export</button>
+    </nav>
+  </header>
+  <div id="banner" class="banner hidden"></div>
+
+  <section id="importexportView" class="view">
+    
+  <div class="head mapping-head">
+    <div>
+      <h1>Import / Export</h1>
+      <p>Administration des contrats de mapping entre les données extraites des documents et le modèle Grist.</p>
+    </div>
+    <div class="actions mapping-actions">
+      <label>Mapping <select id="mappingSelect"><option value="produit">Produit</option></select></label>
+      <button id="mappingImportBtn">Importer JSON</button>
+      <input id="mappingFileInput" type="file" accept="application/json,.json" hidden>
+      <button id="mappingValidateBtn">Valider</button>
+      <button class="primary" id="mappingExportBtn">Exporter JSON</button>
+      <button id="mappingResetBtn">Réinitialiser</button>
+    </div>
+  </div>
+
+  <div class="mapping-help panel">
+    <strong>À quoi sert le mapping ?</strong>
+    <p>Le mapping est le contrat entre l’analyse d’une fiche Produit et Grist. À gauche figurent les informations que l’IA doit identifier dans le document ; à droite les colonnes de <code>Fonctionnalites</code>. Les traits indiquent où chaque valeur doit être écrite. Vous pouvez les créer par glisser-déposer, remapper un champ vers une autre colonne et supprimer une liaison avec ×, le bouton Délier, la touche Suppr, un double-clic ou un clic droit sur le trait. Une référence <code>Ref</code> est recherchée dans sa table référente et peut être créée si elle n’existe pas.</p>
+    <p><strong>Important :</strong> une valeur absente du document reste <code>null</code> et n’efface pas une valeur existante lors d’une mise à jour. Modifier ce mapping ne modifie pas le schéma Grist.</p>
+  </div>
+
+  <div id="mappingStats" class="kpis mapping-kpis"></div>
+  <div id="mappingValidation" class="mapping-validation hidden"></div>
+
+  <div class="mapping-layout">
+    <div class="mapping-board panel" id="mappingBoard">
+      <div class="mapping-column source-column">
+        <div class="mapping-column-title"><strong>JSON / document</strong><small>Champ que l’IA doit identifier</small></div>
+        <div id="mappingSources" class="mapping-list"></div>
+      </div>
+      <div class="mapping-canvas-wrap">
+        <svg id="mappingLines" class="mapping-lines" aria-hidden="true"></svg>
+        <div class="mapping-center-note">Glisser depuis ● vers une cible ●<br><small>ou cliquer source puis cible</small></div>
+      </div>
+      <div class="mapping-column target-column">
+        <div class="mapping-column-title"><strong>Grist · Fonctionnalites</strong><small>Colonne cible</small></div>
+        <div id="mappingTargets" class="mapping-list"></div>
+        <div class="mapping-add-target">
+          <input id="mappingNewTarget" placeholder="Nouvelle colonne cible dans le mapping">
+          <button id="mappingAddTargetBtn">Ajouter à la vue</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="mapping-rules panel">
+      <div class="mapping-rules-head">
+        <div><strong>Règles du champ</strong><small id="mappingRuleSubtitle">Sélectionnez un champ ou une liaison.</small></div>
+        <button id="mappingDisconnectBtn" class="danger hidden">Délier</button>
+      </div>
+      <div id="mappingRuleEditor" class="mapping-empty">Cliquez sur un champ à gauche ou sur une liaison pour afficher et modifier ses règles.</div>
+    </aside>
+  </div>
+
+  <div class="panel mapping-json-panel">
+    <details>
+      <summary><strong>JSON brut</strong> — vue avancée</summary>
+      <div class="mapping-json-actions"><button id="mappingApplyRawBtn">Appliquer le JSON brut</button></div>
+      <textarea id="mappingRawJson" spellcheck="false"></textarea>
+    </details>
+  </div>
+
+  </section>
+</div>
+<script src="app.js?v=1.0.0"></script>
+</body>
+</html>
