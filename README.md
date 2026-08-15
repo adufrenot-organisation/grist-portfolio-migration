@@ -56,3 +56,13 @@ Correction de l'import des mappings historiques au format `fields`, notamment `m
 
 ## v2.5 — cache fix
 Le JavaScript et le CSS ont été renommés (`migration-v2.5.js`, `migration-v2.5.css`) afin d'empêcher GitHub Pages ou le navigateur de réutiliser une ancienne version de `app.js`. Une signature `BUILD 2.5` est visible en bas à gauche.
+
+## v2.6 — correction du chargement
+Cause corrigée : du code résiduel de l'ancien éditeur référençait les éléments `rules` et `addTargetBtn`, supprimés du HTML. Cette erreur JavaScript interrompait l'application avant l'installation du gestionnaire d'import.
+
+La v2.6 :
+- supprime le code legacy fautif ;
+- conserve uniquement l'éditeur graphique ;
+- charge le mapping historique `fields` ;
+- affiche `Fonctionnalites` et ses cibles connues sans connexion Grist ;
+- utilise de nouveaux noms JS/CSS pour éviter tout cache.
