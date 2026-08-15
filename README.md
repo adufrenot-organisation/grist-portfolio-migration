@@ -36,3 +36,12 @@ L'exécution réelle d'upserts est volontairement protégée dans cette version 
 
 ## v2.2
 Correction de l'import des mappings historiques au format `fields`, notamment `mapping_produit`. Les propriétés `target_type`, `reference.lookup_column`, `source_fields_without_current_grist_target`, transformations et définitions originales sont préservées lors de la conversion vers l'éditeur graphique.
+
+
+## v2.3 — correction affichage après import
+- `target.table` est toujours ajouté aux tables disponibles ;
+- un mapping historique affiche immédiatement ses colonnes cibles connues sans connexion Grist ;
+- l'onglet est rendu visible avant le calcul des traits ;
+- les traits sont redessinés après mise en page ;
+- le canvas ne masque plus les connexions ;
+- après connexion Grist, toutes les colonnes réelles de la table remplacent/complètent celles connues du mapping.

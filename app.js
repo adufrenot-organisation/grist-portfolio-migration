@@ -13,7 +13,7 @@ function activeMapping(){return (state.library[state.family]||[]).find(m=>m.mapp
 function saveLib(){localStorage.setItem(LIBKEY,JSON.stringify(state.library))}
 function normalize(m,f="produit"){m=m||{};m.mapping_type=m.mapping_type||f;m.mapping_id=m.mapping_id||slug(m.name||"mapping");m.name=m.name||m.mapping_id;m.description=m.description||"";m.rules=Array.isArray(m.rules)?m.rules:legacyRules(m);m.targets=Array.isArray(m.targets)?m.targets:[];return m}
 function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||"Texte",grist_type:r.grist_type||r.target_type||r.type||"",identify:r.identify||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false}));return out}
-function switchView(id){document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!==id));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===id));if(id==="mappings")renderEditor();if(id==="simulate")renderSimulation()}
+function switchView(id){document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!==id));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===id));if(id==="mappings"){requestAnimationFrame(()=>{renderEditor();requestAnimationFrame(()=>{try{graphDraw()}catch(e){}})})}if(id==="simulate")renderSimulation()}
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 
 async function init(){
@@ -133,6 +133,7 @@ function graphAllTables(){
   const m=activeMapping();
   return [...new Set([
     ...Object.keys(state.schema||{}),
+    m?.target?.table,
     ...(m?.targets||[]).map(t=>t.table),
     ...(m?.rules||[]).map(r=>r.target_table)
   ].filter(Boolean))];
@@ -164,7 +165,13 @@ function graphRenderTableSelect(){
   graphState.displayTable=graphCurrentTable();
   sel.innerHTML=tables.map(t=>`<option value="${graphEsc(t)}">${graphEsc(t)}</option>`).join("");
   if(graphState.displayTable)sel.value=graphState.displayTable;
-  $("targetTableCaption").textContent=graphState.displayTable?`${graphState.displayTable} · toutes les colonnes restent visibles`:"Connecte Grist ou ajoute une cible manuelle";
+  if(graphState.displayTable){
+    const realCount=(state.schema?.[graphState.displayTable]||[]).length;
+    const knownCount=graphColumnsForTable(graphState.displayTable).length;
+    $("targetTableCaption").textContent=realCount
+      ? `${graphState.displayTable} · ${realCount} colonne(s) du schéma Grist`
+      : `${graphState.displayTable} · ${knownCount} colonne(s) connues du mapping · connecte Grist pour afficher le schéma complet`;
+  }else $("targetTableCaption").textContent="Connecte Grist ou ajoute une cible manuelle";
 }
 function graphRender(){
   const m=activeMapping();
@@ -358,7 +365,14 @@ $("mapFile").onchange=e=>{
       }else state.library[fam].push(imported);
       state.family=fam; state.mappingId=imported.mapping_id;
       graphState.displayTable=imported.target?.table||imported.rules.find(r=>r.target_table)?.target_table||"";
-      saveLib(); renderMappingSelectors(); renderEditor(); switchView("mappings");
+      saveLib();
+      // Afficher d'abord l'onglet pour que le navigateur calcule les vraies dimensions.
+      switchView("mappings");
+      renderMappingSelectors();
+      requestAnimationFrame(()=>{
+        renderEditor();
+        requestAnimationFrame(()=>{ graphRender(); graphDraw(); });
+      });
       msg(`Mapping chargé : ${imported.name} · ${imported.rules.length} liaison(s)`);
     }catch(err){
       console.error(err);
