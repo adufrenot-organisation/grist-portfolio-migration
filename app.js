@@ -12,7 +12,7 @@ function infer(v){if(v==null)return"null";if(Array.isArray(v))return"array";if(t
 function activeMapping(){return (state.library[state.family]||[]).find(m=>m.mapping_id===state.mappingId)||null}
 function saveLib(){localStorage.setItem(LIBKEY,JSON.stringify(state.library))}
 function normalize(m,f="produit"){m=m||{};m.mapping_type=m.mapping_type||f;m.mapping_id=m.mapping_id||slug(m.name||"mapping");m.name=m.name||m.mapping_id;m.description=m.description||"";m.rules=Array.isArray(m.rules)?m.rules:legacyRules(m);m.targets=Array.isArray(m.targets)?m.targets:[];return m}
-function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||"Texte",grist_type:r.grist_type||r.type||"",identify:r.identify||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false}));return out}
+function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||"Texte",grist_type:r.grist_type||r.target_type||r.type||"",identify:r.identify||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false}));return out}
 function switchView(id){document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!==id));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===id));if(id==="mappings")renderEditor();if(id==="simulate")renderSimulation()}
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 
@@ -265,4 +265,107 @@ renderEditor=function(){
   $("mapName").value=m.name;$("mapId").value=m.mapping_id;$("mapDescription").value=m.description||"";
   $("mappingJson").value=JSON.stringify(m,null,2);
   graphRender();
+};
+
+// ===== v2.2 : import robuste des mappings historiques =====
+function importMappingCompatible(raw){
+  if(!raw || typeof raw!=="object") throw new Error("Le fichier ne contient pas un objet JSON.");
+  const fam=["produit","projet","autre"].includes(String(raw.mapping_type||"").toLowerCase())
+    ? String(raw.mapping_type).toLowerCase() : "autre";
+
+  const converted=clone(raw);
+  converted.mapping_type=fam;
+  converted.name=converted.name||converted.mapping_id||"Mapping importé";
+  converted.mapping_id=converted.mapping_id||slug(converted.name);
+  converted.description=converted.description||converted.source?.document_type||"";
+
+  // Format historique : fields = { cle_metier: { json_field, target_column, target_type, reference... } }
+  if(!Array.isArray(converted.rules)){
+    converted.rules=[];
+    Object.entries(converted.fields||{}).forEach(([key,f])=>{
+      converted.rules.push({
+        source:f.json_field||key,
+        target_table:f.target_table||converted.target?.table||"",
+        target_column:f.target_column||f.grist_column||"",
+        business_type:
+          (String(f.target_type||"").startsWith("RefList:")?"Liste de références":
+           String(f.target_type||"").startsWith("Ref:")?"Référence":
+           f.expected_semantic_type==="Text"?"Texte":
+           f.target_type==="Date"?"Date":
+           f.target_type==="Bool"?"Booléen":
+           f.target_type==="Numeric"?"Nombre":
+           f.target_type==="Choice"?"Statut":"Texte"),
+        grist_type:f.target_type||f.grist_type||f.type||"",
+        identify:f.identify||"",
+        ref_table:f.reference?.table||"",
+        ref_match:f.reference?.lookup_column||f.reference?.match_column||"Nom",
+        create_if_missing:f.reference?.create_if_missing??false,
+        required:f.required??false,
+        when_missing:f.when_missing||f.when_missing_on_update||"",
+        transform:f.transform??null,
+        original_field_key:key,
+        original_definition:clone(f)
+      });
+    });
+  }
+
+  // Preserve unmapped identified JSON fields and expose them graphically on the left.
+  converted.unmapped_source_fields=converted.unmapped_source_fields||{};
+  Object.entries(converted.source_fields_without_current_grist_target||{}).forEach(([key,f])=>{
+    converted.unmapped_source_fields[f.json_field||key]=clone(f);
+  });
+
+  converted.targets=Array.isArray(converted.targets)?converted.targets:[];
+  converted.rules.forEach(r=>{
+    if(r.target_table&&r.target_column&&!converted.targets.some(t=>t.table===r.target_table&&t.column===r.target_column)){
+      converted.targets.push({table:r.target_table,column:r.target_column,type:r.grist_type||""});
+    }
+  });
+  return converted;
+}
+
+// Include preserved unmapped fields in the graphical source list.
+const _graphMappingFieldsV22=graphMappingFields;
+graphMappingFields=function(){
+  const m=activeMapping();
+  return [...new Set([
+    ..._graphMappingFieldsV22(),
+    ...Object.keys(m?.unmapped_source_fields||{}),
+    ...Object.values(m?.source_fields_without_current_grist_target||{}).map(x=>x.json_field).filter(Boolean)
+  ])];
+};
+
+$("mapFile").onchange=e=>{
+  const file=e.target.files?.[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const imported=importMappingCompatible(JSON.parse(reader.result));
+      const fam=imported.mapping_type;
+      state.library[fam]=state.library[fam]||[];
+      let id=imported.mapping_id, n=2;
+      if(state.library[fam].some(x=>x.mapping_id===id)){
+        const replace=confirm(`Le mapping "${id}" existe déjà.\n\nOK = remplacer\nAnnuler = importer comme copie`);
+        if(replace){
+          state.library[fam][state.library[fam].findIndex(x=>x.mapping_id===id)]=imported;
+        }else{
+          const base=id;
+          while(state.library[fam].some(x=>x.mapping_id===id)) id=base+"_"+n++;
+          imported.mapping_id=id;
+          imported.name=(imported.name||base)+" - copie";
+          state.library[fam].push(imported);
+        }
+      }else state.library[fam].push(imported);
+      state.family=fam; state.mappingId=imported.mapping_id;
+      graphState.displayTable=imported.target?.table||imported.rules.find(r=>r.target_table)?.target_table||"";
+      saveLib(); renderMappingSelectors(); renderEditor(); switchView("mappings");
+      msg(`Mapping chargé : ${imported.name} · ${imported.rules.length} liaison(s)`);
+    }catch(err){
+      console.error(err);
+      msg("Impossible de charger le mapping : "+err.message);
+    }finally{
+      e.target.value="";
+    }
+  };
+  reader.readAsText(file,"utf-8");
 };

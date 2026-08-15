@@ -32,3 +32,7 @@ L'exécution réelle d'upserts est volontairement protégée dans cette version 
 - Double-clic ou clic droit sur un trait supprime la liaison.
 - Cliquer sur un trait ouvre l’inspecteur de règles.
 - Les règles Ref, le type métier et la consigne `identify` restent éditables.
+
+
+## v2.2
+Correction de l'import des mappings historiques au format `fields`, notamment `mapping_produit`. Les propriétés `target_type`, `reference.lookup_column`, `source_fields_without_current_grist_target`, transformations et définitions originales sont préservées lors de la conversion vers l'éditeur graphique.
