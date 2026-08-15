@@ -1,87 +1,90 @@
 <!doctype html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>GRIST. MIGRATION PMO</title>
-  <link rel="stylesheet" href="styles.css?v=1.0.0">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GRIST. Migration PMO</title>
+<link rel="stylesheet" href="styles.css?v=2.0.0">
 </head>
 <body>
-<div id="app">
-  <header>
-    <b>🔄 GRIST. MIGRATION PMO</b>
-    <span>v1.0.0</span>
-    <nav>
-      <button class="tab active">Import / Export</button>
-    </nav>
-  </header>
-  <div id="banner" class="banner hidden"></div>
+<header>
+  <div><b>🔄 GRIST. MIGRATION PMO</b><span class="version">v2.0.0</span></div>
+  <nav>
+    <button class="tab active" data-view="workspace">Atelier</button>
+    <button class="tab" data-view="mappings">Mappings</button>
+    <button class="tab" data-view="simulate">Simulation</button>
+    <button class="tab" data-view="settings">Connexion Grist</button>
+  </nav>
+</header>
+<div id="banner" class="banner hidden"></div>
 
-  <section id="importexportView" class="view">
-    
-  <div class="head mapping-head">
-    <div>
-      <h1>Import / Export</h1>
-      <p>Administration des contrats de mapping entre les données extraites des documents et le modèle Grist.</p>
-    </div>
-    <div class="actions mapping-actions">
-      <label>Mapping <select id="mappingSelect"><option value="produit">Produit</option></select></label>
-      <button id="mappingImportBtn">Importer JSON</button>
-      <input id="mappingFileInput" type="file" accept="application/json,.json" hidden>
-      <button id="mappingValidateBtn">Valider</button>
-      <button class="primary" id="mappingExportBtn">Exporter JSON</button>
-      <button id="mappingResetBtn">Réinitialiser</button>
-    </div>
+<main>
+<section id="workspace" class="view">
+  <div class="hero">
+    <div><h1>Atelier de migration</h1><p>Charge un JSON, construis ou sélectionne un mapping, corrige les données de travail, simule puis applique.</p></div>
+    <div class="stepper"><span class="on">1 JSON</span><span>2 Mapping</span><span>3 Simulation</span><span>4 Validation</span></div>
   </div>
-
-  <div class="mapping-help panel">
-    <strong>À quoi sert le mapping ?</strong>
-    <p>Le mapping est le contrat entre l’analyse d’une fiche Produit et Grist. À gauche figurent les informations que l’IA doit identifier dans le document ; à droite les colonnes de <code>Fonctionnalites</code>. Les traits indiquent où chaque valeur doit être écrite. Vous pouvez les créer par glisser-déposer, remapper un champ vers une autre colonne et supprimer une liaison avec ×, le bouton Délier, la touche Suppr, un double-clic ou un clic droit sur le trait. Une référence <code>Ref</code> est recherchée dans sa table référente et peut être créée si elle n’existe pas.</p>
-    <p><strong>Important :</strong> une valeur absente du document reste <code>null</code> et n’efface pas une valeur existante lors d’une mise à jour. Modifier ce mapping ne modifie pas le schéma Grist.</p>
+  <div class="grid2">
+    <article class="card">
+      <h2>1. Données JSON</h2>
+      <div class="toolbar">
+        <button id="loadDataBtn" class="primary">Charger JSON</button><input id="dataFile" type="file" accept=".json,application/json" hidden>
+        <button id="exportWorkBtn">Exporter JSON corrigé</button>
+      </div>
+      <div id="dataSummary" class="summary">Aucun fichier chargé.</div>
+      <div id="dataGrid" class="tablewrap"></div>
+    </article>
+    <article class="card">
+      <h2>2. Mapping à utiliser</h2>
+      <div class="formrow"><label>Famille</label><select id="familySelect"><option value="produit">Produit</option><option value="projet">Projet</option><option value="autre">Autre</option></select></div>
+      <div class="formrow"><label>Mapping</label><select id="mappingSelect"></select></div>
+      <div class="toolbar"><button id="editMappingBtn">Modifier</button><button id="newMappingBtn" class="primary">Créer depuis ce JSON</button></div>
+      <div id="mappingSummary" class="summary"></div>
+      <div id="suggestions"></div>
+    </article>
   </div>
+  <div class="footer-actions"><button id="goSimBtn" class="primary big" disabled>Simuler la migration →</button></div>
+</section>
 
-  <div id="mappingStats" class="kpis mapping-kpis"></div>
-  <div id="mappingValidation" class="mapping-validation hidden"></div>
-
-  <div class="mapping-layout">
-    <div class="mapping-board panel" id="mappingBoard">
-      <div class="mapping-column source-column">
-        <div class="mapping-column-title"><strong>JSON / document</strong><small>Champ que l’IA doit identifier</small></div>
-        <div id="mappingSources" class="mapping-list"></div>
-      </div>
-      <div class="mapping-canvas-wrap">
-        <svg id="mappingLines" class="mapping-lines" aria-hidden="true"></svg>
-        <div class="mapping-center-note">Glisser depuis ● vers une cible ●<br><small>ou cliquer source puis cible</small></div>
-      </div>
-      <div class="mapping-column target-column">
-        <div class="mapping-column-title"><strong>Grist · Fonctionnalites</strong><small>Colonne cible</small></div>
-        <div id="mappingTargets" class="mapping-list"></div>
-        <div class="mapping-add-target">
-          <input id="mappingNewTarget" placeholder="Nouvelle colonne cible dans le mapping">
-          <button id="mappingAddTargetBtn">Ajouter à la vue</button>
-        </div>
-      </div>
-    </div>
-
-    <aside class="mapping-rules panel">
-      <div class="mapping-rules-head">
-        <div><strong>Règles du champ</strong><small id="mappingRuleSubtitle">Sélectionnez un champ ou une liaison.</small></div>
-        <button id="mappingDisconnectBtn" class="danger hidden">Délier</button>
-      </div>
-      <div id="mappingRuleEditor" class="mapping-empty">Cliquez sur un champ à gauche ou sur une liaison pour afficher et modifier ses règles.</div>
-    </aside>
+<section id="mappings" class="view hidden">
+  <div class="hero"><div><h1>Bibliothèque & éditeur de mappings</h1><p>Produit, Projet ou autre famille : plusieurs mappings indépendants, multi-tables.</p></div></div>
+  <div class="librarybar">
+    <select id="libFamily"><option value="produit">Produit</option><option value="projet">Projet</option><option value="autre">Autre</option></select>
+    <select id="libMapping"></select>
+    <button id="createBlankBtn" class="primary">＋ Nouveau</button><button id="duplicateBtn">Dupliquer</button>
+    <button id="importMapBtn">Importer</button><input id="mapFile" type="file" accept=".json,application/json" hidden>
+    <button id="exportMapBtn">Exporter</button><button id="deleteMapBtn" class="danger">Supprimer</button>
   </div>
-
-  <div class="panel mapping-json-panel">
-    <details>
-      <summary><strong>JSON brut</strong> — vue avancée</summary>
-      <div class="mapping-json-actions"><button id="mappingApplyRawBtn">Appliquer le JSON brut</button></div>
-      <textarea id="mappingRawJson" spellcheck="false"></textarea>
-    </details>
+  <div class="mappingmeta">
+    <input id="mapName" placeholder="Nom du mapping"><input id="mapId" placeholder="Identifiant technique">
+    <input id="mapDescription" placeholder="Description">
   </div>
+  <div class="mapping-editor">
+    <div class="column"><div class="colhead"><b>JSON SOURCE</b><button id="addSourceBtn">＋ champ</button></div><div id="sourceFields"></div></div>
+    <div class="column wide"><div class="colhead"><b>LIAISONS & RÈGLES</b><span>Choisis table, colonne et type métier.</span></div><div id="rules"></div></div>
+    <div class="column"><div class="colhead"><b>SCHÉMA CIBLE</b><button id="addTargetBtn">＋ cible</button></div><div id="targetFields"></div></div>
+  </div>
+  <div class="jsonbox"><details><summary>JSON avancé du mapping</summary><textarea id="mappingJson"></textarea><button id="applyMappingJson">Appliquer le JSON</button></details></div>
+</section>
 
-  </section>
-</div>
-<script src="app.js?v=1.0.0"></script>
-</body>
-</html>
+<section id="simulate" class="view hidden">
+  <div class="hero"><div><h1>Simulation</h1><p>Aucune écriture n'est faite dans Grist tant que tu n'exécutes pas explicitement le plan.</p></div>
+  <button id="runSimulationBtn" class="primary">↻ Re-simuler</button></div>
+  <div id="simStats" class="stats"></div>
+  <div id="simWarnings"></div>
+  <div id="simTable" class="tablewrap"></div>
+  <div class="footer-actions"><button id="backEditBtn">← Corriger les données</button><button id="executeBtn" class="primary big" disabled>Appliquer réellement dans Grist</button></div>
+</section>
+
+<section id="settings" class="view hidden">
+  <div class="hero"><div><h1>Connexion Grist</h1><p>Utilisée pour lire le schéma, comparer les données et exécuter la migration.</p></div></div>
+  <article class="card narrow">
+    <div class="formrow"><label>Serveur</label><input id="gristServer" placeholder="https://..."></div>
+    <div class="formrow"><label>Document ID</label><input id="gristDoc"></div>
+    <div class="formrow"><label>Clé API</label><input id="gristKey" type="password"></div>
+    <div class="toolbar"><button id="saveConnBtn">Mémoriser localement</button><button id="testConnBtn" class="primary">Tester & charger le schéma</button></div>
+    <div id="connStatus" class="summary"></div>
+  </article>
+</section>
+</main>
+<script src="app.js?v=2.0.0"></script>
+</body></html>

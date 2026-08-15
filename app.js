@@ -1,274 +1,122 @@
 
-const $ = id => document.getElementById(id);
-function esc(value){
-  return String(value ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-let _bannerTimer=null;
-function msg(text){
-  const b=$("banner");
-  if(!b){ console.log(text); return; }
-  b.textContent=text;
-  b.classList.remove("hidden");
-  clearTimeout(_bannerTimer);
-  _bannerTimer=setTimeout(()=>b.classList.add("hidden"),3500);
-}
+const $=id=>document.getElementById(id);
+const state={dataOriginal:null,dataWork:null,dataName:null,library:{produit:[],projet:[],autre:[]},family:"produit",mappingId:null,schema:{},simulation:[]};
+const BUSINESS_TYPES=["Texte","Nombre","Date","Période","Booléen","Entité","Référence","Liste de références","Statut","Pourcentage","Code"];
+const LIBKEY="grist-migration:v2:library", CONNKEY="grist-migration:v2:conn";
+function msg(t){const b=$("banner");b.textContent=t;b.classList.remove("hidden");setTimeout(()=>b.classList.add("hidden"),2600)}
+function clone(x){return JSON.parse(JSON.stringify(x))}
+function slug(s){return String(s||"mapping").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\w]+/g,"_").replace(/^_|_$/g,"").toLowerCase()}
+function rowsOf(d){if(Array.isArray(d))return d;if(d&&Array.isArray(d.records))return d.records;if(d&&Array.isArray(d.data))return d.data;if(d&&typeof d==="object")return [d];return []}
+function fieldsOf(d){const set=new Set();rowsOf(d).forEach(r=>Object.keys(r||{}).forEach(k=>set.add(k)));return [...set]}
+function infer(v){if(v==null)return"null";if(Array.isArray(v))return"array";if(typeof v==="boolean")return"boolean";if(typeof v==="number")return"number";if(/^\d{4}-\d\d-\d\d/.test(String(v)))return"date";return"string"}
+function activeMapping(){return (state.library[state.family]||[]).find(m=>m.mapping_id===state.mappingId)||null}
+function saveLib(){localStorage.setItem(LIBKEY,JSON.stringify(state.library))}
+function normalize(m,f="produit"){m=m||{};m.mapping_type=m.mapping_type||f;m.mapping_id=m.mapping_id||slug(m.name||"mapping");m.name=m.name||m.mapping_id;m.description=m.description||"";m.rules=Array.isArray(m.rules)?m.rules:legacyRules(m);m.targets=Array.isArray(m.targets)?m.targets:[];return m}
+function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||"Texte",grist_type:r.grist_type||r.type||"",identify:r.identify||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false}));return out}
+function switchView(id){document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!==id));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===id));if(id==="mappings")renderEditor();if(id==="simulate")renderSimulation()}
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 
-// -----------------------------------------------------------------------------
-// IMPORT / EXPORT — Mapping Produit
-// -----------------------------------------------------------------------------
-const MAPPING_STORAGE_KEY="grist-migration:mapping-produit:v1";
-let mappingState=null;
-let mappingSelectedSource=null;
-let mappingPendingSource=null;
-let mappingExtraTargets=[];
-let mappingDragPoint=null;
-// Schéma complet de la table cible Fonctionnalites. Cette liste est indépendante
-// des liaisons actives : délier un champ JSON ne doit jamais masquer une colonne Grist.
-const MAPPING_TARGET_SCHEMA=[
-  {id:"Parent",type:"Ref:Projects",reference:{table:"Projects",lookup_column:"nom"}},
-  {id:"Stade",type:"Ref:Stades_Fonctionnalite",reference:{table:"Stades_Fonctionnalite",lookup_column:"Nom"}},
-  {id:"Nom",type:"Numeric"},
-  {id:"Code",type:"Text"},
-  {id:"Priorite",type:"Choice"},
-  {id:"Description",type:"Any"},
-  {id:"Progression",type:"Numeric"},
-  {id:"Date_Cible",type:"Date"},
-  {id:"Responsable",type:"Ref:Team",reference:{table:"Team",lookup_column:"nom"}},
-  {id:"Actif",type:"Bool"},
-  {id:"Date_Debut",type:"Date"},
-  {id:"Date_Fin",type:"Date"}
-];
+async function init(){
+ try{state.library=JSON.parse(localStorage.getItem(LIBKEY))||state.library}catch(e){}
+ for(const f of ["produit","projet","autre"])if(!Array.isArray(state.library[f]))state.library[f]=[];
+ if(!state.library.produit.length){try{const r=await fetch("mapping-produit.json?v=2");if(r.ok){let m=normalize(await r.json(),"produit");m.name=m.name||"Mapping Produit de référence";state.library.produit.push(m)}}catch(e){}}
+ const c=JSON.parse(localStorage.getItem(CONNKEY)||"{}");$("gristServer").value=c.server||"";$("gristDoc").value=c.doc||"";$("gristKey").value=c.key||"";
+ state.mappingId=state.library.produit[0]?.mapping_id||null;renderMappingSelectors();renderData();saveLib();
+}
+function renderMappingSelectors(){
+ for(const [famId,mapId] of [["familySelect","mappingSelect"],["libFamily","libMapping"]]){
+  const fs=$(famId),ms=$(mapId);if(!fs||!ms)continue;fs.value=state.family;ms.innerHTML="";
+  (state.library[state.family]||[]).forEach(m=>{const o=document.createElement("option");o.value=m.mapping_id;o.textContent=m.name;ms.appendChild(o)});
+  if(state.mappingId)ms.value=state.mappingId;
+ }
+ const m=activeMapping();$("mappingSummary").innerHTML=m?`<b>${m.name}</b><br>${m.rules.length} règle(s) · ${new Set(m.rules.map(r=>r.target_table)).size} table(s) cible(s)`:"Aucun mapping sélectionné.";
+ $("goSimBtn").disabled=!(state.dataWork&&m);
+}
+$("familySelect").onchange=e=>changeFamily(e.target.value);$("libFamily").onchange=e=>changeFamily(e.target.value);
+function changeFamily(f){state.family=f;state.mappingId=state.library[f][0]?.mapping_id||null;renderMappingSelectors();renderEditor()}
+$("mappingSelect").onchange=e=>{state.mappingId=e.target.value;renderMappingSelectors()};
+$("libMapping").onchange=e=>{state.mappingId=e.target.value;renderMappingSelectors();renderEditor()};
 
-function mappingClone(v){return JSON.parse(JSON.stringify(v))}
-function mappingEsc(v){return esc(v??"")}
-function mappingAllEntries(){
-  if(!mappingState)return[];
-  const out=[];
-  Object.entries(mappingState.fields||{}).forEach(([key,cfg])=>out.push({section:"fields",key,cfg}));
-  Object.entries(mappingState.source_fields_without_current_grist_target||{}).forEach(([key,cfg])=>out.push({section:"unmapped",key,cfg}));
-  return out;
+$("loadDataBtn").onclick=()=>$("dataFile").click();
+$("dataFile").onchange=e=>loadData(e.target.files[0]);
+function loadData(file){if(!file)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);state.dataOriginal=clone(d);state.dataWork=clone(d);state.dataName=file.name;renderData();suggestMapping();msg("JSON chargé")}catch(e){msg("JSON invalide : "+e.message)}};r.readAsText(file)}
+function renderData(){
+ const rows=rowsOf(state.dataWork),fields=fieldsOf(state.dataWork);
+ $("dataSummary").textContent=state.dataWork?`${state.dataName||"JSON"} · ${rows.length} enregistrement(s) · ${fields.length} champ(s)`:"Aucun fichier chargé.";
+ if(!rows.length){$("dataGrid").innerHTML="";renderMappingSelectors();return}
+ let h="<table><thead><tr><th>#</th>"+fields.map(f=>`<th>${f}</th>`).join("")+"</tr></thead><tbody>";
+ rows.forEach((r,i)=>{h+=`<tr><td>${i+1}</td>`+fields.map(f=>`<td contenteditable="true" data-row="${i}" data-field="${f}">${r[f]??""}</td>`).join("")+"</tr>"});h+="</tbody></table>";$("dataGrid").innerHTML=h;
+ $("dataGrid").querySelectorAll("td[contenteditable]").forEach(td=>td.onblur=()=>{let v=td.textContent;const old=rowsOf(state.dataWork)[+td.dataset.row][td.dataset.field];if(typeof old==="number"&&!isNaN(Number(v)))v=Number(v);if(typeof old==="boolean")v=/^(true|1|oui)$/i.test(v);rowsOf(state.dataWork)[+td.dataset.row][td.dataset.field]=v;suggestMapping()});
+ renderMappingSelectors();
 }
-function mappingEntryByJson(jsonField){return mappingAllEntries().find(x=>x.cfg?.json_field===jsonField)||null}
-function mappingTargetMeta(){
-  const map=new Map();
-  // Toujours commencer par le schéma complet de la table cible.
-  MAPPING_TARGET_SCHEMA.forEach(c=>map.set(c.id,{type:c.type||"",reference:c.reference||null}));
-  // Les métadonnées du mapping peuvent enrichir le schéma, mais ne déterminent
-  // jamais si une colonne est visible ou non.
-  mappingAllEntries().forEach(({cfg})=>{
-    if(!cfg?.target_column)return;
-    const base=map.get(cfg.target_column)||{type:"",reference:null};
-    map.set(cfg.target_column,{type:cfg.target_type||base.type||"",reference:cfg.reference||base.reference||null});
-  });
-  mappingExtraTargets.forEach(x=>{if(!map.has(x))map.set(x,{type:"",reference:null})});
-  return map;
+$("exportWorkBtn").onclick=()=>download(state.dataWork,(state.dataName||"donnees").replace(/\.json$/,"")+"_corrige.json");
+function download(obj,name){const a=document.createElement("a"),u=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:"application/json"}));a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+
+function suggestMapping(){
+ if(!state.dataWork)return;const m=activeMapping(),targets=allTargets();const suggestions=[];
+ fieldsOf(state.dataWork).forEach(s=>{const sn=norm(s);let best=null,score=0;targets.forEach(t=>{const x=similar(sn,norm(t.column));if(x>score){score=x;best=t}});if(best&&score>.45)suggestions.push({s,best,score})});
+ $("suggestions").innerHTML=suggestions.length?`<h3>Suggestions intelligentes</h3>`+suggestions.slice(0,8).map(x=>`<div class="summary"><b>${x.s}</b> → ${x.best.table}.${x.best.column} · ${Math.round(x.score*100)}%</div>`).join(""):"";
 }
-function mappingSourceRows(){
-  return mappingAllEntries().sort((a,b)=>String(a.cfg.json_field||a.key).localeCompare(String(b.cfg.json_field||b.key),'fr'));
+function norm(s){return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[_\s-]/g,"")}
+function similar(a,b){if(a===b)return 1;if(a.includes(b)||b.includes(a))return .82;let n=0;for(const c of new Set(a))if(b.includes(c))n++;return n/Math.max(new Set(a).size,new Set(b).size)}
+function allTargets(){const arr=[];Object.entries(state.schema).forEach(([table,cols])=>cols.forEach(c=>arr.push({table,column:c.id||c.colId||c.label,type:c.type||""})));const m=activeMapping();(m?.targets||[]).forEach(t=>arr.push(t));return arr}
+
+$("newMappingBtn").onclick=()=>createFromData();$("createBlankBtn").onclick=()=>createMapping(false);
+function createFromData(){createMapping(true)}
+function createMapping(fromData){
+ const name=prompt("Nom du mapping :",fromData?"Mapping depuis "+(state.dataName||"JSON"):"Nouveau mapping");if(!name)return;
+ let fam=state.family,id=slug(name),n=2;while(state.library[fam].some(x=>x.mapping_id===id))id=slug(name)+"_"+n++;
+ const m=normalize({mapping_id:id,name,mapping_type:fam,description:"",rules:[],targets:[]},fam);
+ if(fromData&&state.dataWork)fieldsOf(state.dataWork).forEach(s=>m.rules.push({source:s,target_table:"",target_column:"",business_type:guessBusiness(s,rowsOf(state.dataWork)[0]?.[s]),grist_type:"",identify:"",ref_table:"",ref_match:"Nom",create_if_missing:false}));
+ state.library[fam].push(m);state.mappingId=id;saveLib();renderMappingSelectors();switchView("mappings");msg("Mapping créé");
 }
-function mappingSave(){
-  if(!mappingState)return;
-  localStorage.setItem(MAPPING_STORAGE_KEY,JSON.stringify(mappingState));
-  mappingSyncRaw();
+function guessBusiness(k,v){const n=norm(k),t=infer(v);if(n.includes("date"))return"Date";if(n.includes("statut"))return"Statut";if(n.includes("id")||n.includes("code"))return"Code";if(t==="number")return"Nombre";if(t==="boolean")return"Booléen";return"Texte"}
+$("editMappingBtn").onclick=()=>switchView("mappings");
+$("duplicateBtn").onclick=()=>{const m=activeMapping();if(!m)return;const c=clone(m);c.name=m.name+" - copie";c.mapping_id=slug(c.name)+"_"+Date.now().toString().slice(-4);state.library[state.family].push(c);state.mappingId=c.mapping_id;saveLib();renderMappingSelectors();renderEditor()};
+$("deleteMapBtn").onclick=()=>{const m=activeMapping();if(!m||!confirm("Supprimer "+m.name+" ?"))return;state.library[state.family]=state.library[state.family].filter(x=>x.mapping_id!==m.mapping_id);state.mappingId=state.library[state.family][0]?.mapping_id||null;saveLib();renderMappingSelectors();renderEditor()};
+$("importMapBtn").onclick=()=>$("mapFile").click();$("mapFile").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{let m=normalize(JSON.parse(r.result),state.family);let fam=["produit","projet","autre"].includes(m.mapping_type)?m.mapping_type:"autre";m.mapping_type=fam;if(state.library[fam].some(x=>x.mapping_id===m.mapping_id))m.mapping_id+="_"+Date.now().toString().slice(-4);state.library[fam].push(m);state.family=fam;state.mappingId=m.mapping_id;saveLib();renderMappingSelectors();renderEditor()}catch(x){msg("Mapping invalide")}};r.readAsText(f)};
+$("exportMapBtn").onclick=()=>{const m=activeMapping();if(m)download(m,slug(m.name)+".json")};
+
+function renderEditor(){
+ renderMappingSelectors();const m=activeMapping();if(!m){$("sourceFields").innerHTML="Aucun mapping.";$("rules").innerHTML="";$("targetFields").innerHTML="";return}
+ $("mapName").value=m.name;$("mapId").value=m.mapping_id;$("mapDescription").value=m.description||"";
+ const src=[...new Set(m.rules.map(r=>r.source))];$("sourceFields").innerHTML=src.map(s=>`<div class="fieldcard"><b>${s}</b><small>${infer(rowsOf(state.dataWork)[0]?.[s])}</small></div>`).join("")||"<div class=summary>Ajoute un champ source.</div>";
+ $("rules").innerHTML=m.rules.map((r,i)=>ruleHtml(r,i)).join("")||"<div class=summary>Aucune liaison. Ajoute un champ source.</div>";
+ const targets=allTargets();$("targetFields").innerHTML=targets.map(t=>`<div class="targetcard"><b>${t.table}.${t.column}</b><small>${t.type||"type non chargé"}</small></div>`).join("")||"<div class=summary>Connecte Grist ou ajoute une cible manuelle.</div>";
+ $("mappingJson").value=JSON.stringify(m,null,2);
 }
-async function loadDefaultMapping(){
-  const saved=localStorage.getItem(MAPPING_STORAGE_KEY);
-  if(saved){try{mappingState=JSON.parse(saved);return}catch(e){console.warn(e)}}
-  const r=await fetch('mapping-produit.json?v=1.0.0',{cache:'no-store'});
-  if(!r.ok)throw new Error('mapping-produit.json introuvable');
-  mappingState=await r.json();
-  mappingSave();
+function ruleHtml(r,i){const tables=[...new Set(["",...Object.keys(state.schema),r.target_table].filter(x=>x!=null))];const cols=(state.schema[r.target_table]||[]).map(c=>c.id||c.colId||c.label);if(r.target_column&&!cols.includes(r.target_column))cols.push(r.target_column);return `<div class="rulecard" data-i="${i}">
+<input class="r-source" value="${esc(r.source)}" placeholder="champ JSON">
+<select class="r-table">${tables.map(x=>`<option ${x===r.target_table?"selected":""}>${esc(x)}</option>`).join("")}</select>
+<select class="r-col"><option></option>${cols.map(x=>`<option ${x===r.target_column?"selected":""}>${esc(x)}</option>`).join("")}</select>
+<select class="r-business">${BUSINESS_TYPES.map(x=>`<option ${x===r.business_type?"selected":""}>${x}</option>`).join("")}</select>
+<button class="danger r-del">×</button></div>`}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+$("rules").onchange=e=>{const card=e.target.closest(".rulecard");if(!card)return;const i=+card.dataset.i,m=activeMapping(),r=m.rules[i];r.source=card.querySelector(".r-source").value;r.target_table=card.querySelector(".r-table").value;r.target_column=card.querySelector(".r-col").value;r.business_type=card.querySelector(".r-business").value;saveLib();renderEditor()};
+$("rules").onclick=e=>{if(!e.target.classList.contains("r-del"))return;const i=+e.target.closest(".rulecard").dataset.i;activeMapping().rules.splice(i,1);saveLib();renderEditor()};
+$("addSourceBtn").onclick=()=>{const m=activeMapping();if(!m)return;const s=prompt("Champ JSON :");if(s){m.rules.push({source:s,target_table:"",target_column:"",business_type:"Texte",grist_type:"",identify:"",ref_table:"",ref_match:"Nom",create_if_missing:false});saveLib();renderEditor()}};
+$("addTargetBtn").onclick=()=>{const m=activeMapping();if(!m)return;const table=prompt("Table cible :");if(!table)return;const column=prompt("Colonne cible :");if(!column)return;const type=prompt("Type Grist :","Text")||"Text";m.targets.push({table,column,type});saveLib();renderEditor()};
+["mapName","mapDescription"].forEach(id=>$(id).onchange=()=>{const m=activeMapping();if(!m)return;m.name=$("mapName").value;m.description=$("mapDescription").value;saveLib();renderMappingSelectors()});
+$("applyMappingJson").onclick=()=>{try{const n=normalize(JSON.parse($("mappingJson").value),state.family),arr=state.library[state.family],i=arr.findIndex(x=>x.mapping_id===state.mappingId);n.mapping_id=state.mappingId;arr[i]=n;saveLib();renderEditor();msg("JSON appliqué")}catch(e){msg("JSON invalide")}}
+
+$("goSimBtn").onclick=()=>{switchView("simulate");runSimulation()};$("runSimulationBtn").onclick=runSimulation;$("backEditBtn").onclick=()=>switchView("workspace");
+function runSimulation(){
+ const m=activeMapping(),rows=rowsOf(state.dataWork);state.simulation=[];
+ if(!m||!rows.length){renderSimulation();return}
+ rows.forEach((row,i)=>{const changes=[],errors=[];m.rules.forEach(r=>{if(!r.target_table||!r.target_column)return;const v=row[r.source];if(v===undefined)return;changes.push({source:r.source,target:r.target_table+"."+r.target_column,value:v,business:r.business_type});if((r.business_type==="Date")&&v&&!/^\d{4}-\d\d-\d\d/.test(String(v)))errors.push(`${r.source}: date à vérifier`)});
+ state.simulation.push({row:i+1,action:errors.length?"ERROR":"PREVIEW",changes,errors})});
+ renderSimulation()
 }
-function mappingSyncRaw(){
-  const el=$("mappingRawJson");
-  if(el&&mappingState)el.value=JSON.stringify(mappingState,null,2);
+function renderSimulation(){
+ const s=state.simulation,err=s.filter(x=>x.errors.length).length;$("simStats").innerHTML=[["Lignes",s.length],["Prêtes",s.length-err],["Erreurs",err]].map(x=>`<div class=stat><b>${x[1]}</b>${x[0]}</div>`).join("");
+ $("simWarnings").innerHTML=state.schema&&Object.keys(state.schema).length?"":`<div class="warn">Simulation locale : connecte Grist pour comparer avec les enregistrements réels et distinguer CREATE / UPDATE / SAME.</div>`;
+ $("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Action</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.row}</td><td>${x.action}</td><td>${x.changes.map(c=>`${c.target} ← ${c.source} = ${c.value}`).join("<br>")}</td><td>${x.errors.join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
+ $("executeBtn").disabled=err>0||!s.length||!Object.keys(state.schema).length;
 }
-function mappingStatsData(){
-  const all=mappingAllEntries(), mapped=all.filter(x=>x.cfg.target_column), refs=all.filter(x=>String(x.cfg.target_type||'').startsWith('Ref:'));
-  return {all:all.length,mapped:mapped.length,unmapped:all.length-mapped.length,refs:refs.length};
-}
-function renderMappingStats(){
-  if(!mappingState)return;
-  const s=mappingStatsData();
-  $("mappingStats").innerHTML=`<div class="kpi"><b>${s.all}</b><small>Champs à identifier</small></div><div class="kpi"><b>${s.mapped}</b><small>Champs mappés</small></div><div class="kpi"><b>${s.unmapped}</b><small>Non mappés</small></div><div class="kpi"><b>${s.refs}</b><small>Références Ref</small></div>`;
-}
-function mappingBadge(cfg){
-  if(!cfg.target_column)return '<span class="mapping-badge warning">Non mappé</span>';
-  if(String(cfg.target_type||'').startsWith('Ref:'))return '<span class="mapping-badge ref">Ref</span>';
-  return `<span class="mapping-badge">${mappingEsc(cfg.target_type||'champ')}</span>`;
-}
-function renderMapping(){
-  if(!mappingState){loadDefaultMapping().then(renderMapping).catch(e=>msg('Erreur mapping : '+e.message));return}
-  const sources=mappingSourceRows();
-  $("mappingSources").innerHTML=sources.map(({cfg})=>`<div class="mapping-node source-node ${cfg.target_column?'mapped':'unmapped'} ${mappingSelectedSource===cfg.json_field?'selected':''}" data-source="${mappingEsc(cfg.json_field)}" tabindex="0"><div class="mapping-port source-port" data-port-source="${mappingEsc(cfg.json_field)}" title="Glisser vers une colonne Grist">●</div><div class="mapping-node-body"><strong>${mappingEsc(cfg.json_field)}</strong><small>${mappingEsc(cfg.identify||'Information à identifier dans le document')}</small><span class="mapping-target-chip ${cfg.target_column?'':'unmapped'}">${cfg.target_column?'→ '+mappingEsc(cfg.target_column):'Non mappé'}${cfg.target_column?`<button class="mapping-chip-remove" data-unlink="${mappingEsc(cfg.json_field)}" title="Supprimer cette liaison" aria-label="Supprimer la liaison">×</button>`:''}</span></div>${mappingBadge(cfg)}</div>`).join('');
-  const targets=mappingTargetMeta();
-  const linkedTargets=new Set(mappingAllEntries().filter(e=>e.cfg.target_column).map(e=>e.cfg.target_column));
-  $("mappingTargets").innerHTML=[...targets.entries()].sort((a,b)=>a[0].localeCompare(b[0],'fr')).map(([name,meta])=>`<div class="mapping-node target-node ${linkedTargets.has(name)?'mapping-target-node-linked':''}" data-target="${mappingEsc(name)}"><div class="mapping-port target-port" data-port-target="${mappingEsc(name)}" title="Cible Grist">●</div><div class="mapping-node-body"><strong>${mappingEsc(name)}</strong><small>${mappingEsc(meta.type||'Colonne cible')}</small></div>${String(meta.type||'').startsWith('Ref:')?'<span class="mapping-badge ref">Ref</span>':''}</div>`).join('');
-  bindMappingNodes();renderMappingStats();mappingSyncRaw();requestAnimationFrame(drawMappingLines);
-  if(mappingSelectedSource)renderMappingRuleEditor(mappingSelectedSource);
-}
-function bindMappingNodes(){
-  document.querySelectorAll('[data-source]').forEach(n=>{
-    n.onclick=e=>{if(e.target.closest('.source-port')||e.target.closest('[data-unlink]'))return;selectMappingSource(n.dataset.source)};
-    n.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectMappingSource(n.dataset.source)};if((e.key==='Delete'||e.key==='Backspace')&&mappingEntryByJson(n.dataset.source)?.cfg?.target_column){e.preventDefault();disconnectMapping(n.dataset.source)}};
-  });
-  document.querySelectorAll('[data-unlink]').forEach(b=>{
-    b.onclick=e=>{e.preventDefault();e.stopPropagation();disconnectMapping(b.dataset.unlink)};
-  });
-  document.querySelectorAll('[data-port-source]').forEach(p=>{
-    p.onpointerdown=e=>{e.preventDefault();e.stopPropagation();mappingPendingSource=p.dataset.portSource;mappingDragPoint={x:e.clientX,y:e.clientY};selectMappingSource(mappingPendingSource);document.body.classList.add('mapping-connecting');p.setPointerCapture?.(e.pointerId);requestAnimationFrame(drawMappingLines)};
-    p.onclick=e=>{e.stopPropagation();mappingPendingSource=p.dataset.portSource;selectMappingSource(mappingPendingSource)};
-  });
-  document.querySelectorAll('[data-target]').forEach(n=>{
-    n.onclick=()=>{if(mappingPendingSource)connectMapping(mappingPendingSource,n.dataset.target)};
-  });
-  document.querySelectorAll('[data-port-target]').forEach(p=>{
-    p.onclick=e=>{e.stopPropagation();if(mappingPendingSource)connectMapping(mappingPendingSource,p.dataset.portTarget)};
-  });
-}
-window.addEventListener('pointermove',e=>{if(!mappingPendingSource||!document.body.classList.contains('mapping-connecting'))return;mappingDragPoint={x:e.clientX,y:e.clientY};requestAnimationFrame(drawMappingLines)});
-window.addEventListener('pointerup',e=>{
-  if(mappingPendingSource&&document.body.classList.contains('mapping-connecting')){
-    const hit=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('[data-target]');
-    if(hit){connectMapping(mappingPendingSource,hit.dataset.target);return}
-  }
-  mappingDragPoint=null;document.body.classList.remove('mapping-connecting');requestAnimationFrame(drawMappingLines);
-});
-window.addEventListener('resize',()=>requestAnimationFrame(drawMappingLines));
-function selectMappingSource(jsonField){
-  mappingSelectedSource=jsonField;mappingPendingSource=jsonField;
-  document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('selected',x.dataset.source===jsonField));
-  renderMappingRuleEditor(jsonField);
-}
-function ensureMappedEntry(jsonField,target){
-  let e=mappingEntryByJson(jsonField);if(!e)return null;
-  if(e.section==='unmapped'){
-    const old=e.cfg;
-    delete mappingState.source_fields_without_current_grist_target[e.key];
-    const key=e.key==='statut_source'?'statut':e.key;
-    mappingState.fields=mappingState.fields||{};
-    mappingState.fields[key]={...old};
-    delete mappingState.fields[key].status;delete mappingState.fields[key].action;
-    e={section:'fields',key,cfg:mappingState.fields[key]};
-  }
-  e.cfg.target_column=target;
-  const targetInfo=mappingTargetMeta().get(target);
-  // Un remapping doit reprendre les métadonnées de la nouvelle colonne cible,
-  // sinon une ancienne Ref/Date pourrait rester attachée à la nouvelle liaison.
-  if(targetInfo?.type)e.cfg.target_type=targetInfo.type;
-  if(targetInfo?.reference)e.cfg.reference=mappingClone(targetInfo.reference);
-  else if(targetInfo?.type&&!String(targetInfo.type).startsWith('Ref:'))delete e.cfg.reference;
-  return e;
-}
-function connectMapping(jsonField,target){
-  const e=ensureMappedEntry(jsonField,target);if(!e)return;
-  mappingPendingSource=null;document.body.classList.remove('mapping-connecting');mappingSave();renderMapping();msg(`${jsonField} → ${target}`);
-}
-function disconnectMapping(jsonField){
-  const e=mappingEntryByJson(jsonField);if(!e||!e.cfg.target_column)return;
-  const cfg=mappingClone(e.cfg);delete cfg.target_column;delete cfg.target_type;delete cfg.reference;
-  delete mappingState.fields[e.key];
-  mappingState.source_fields_without_current_grist_target=mappingState.source_fields_without_current_grist_target||{};
-  mappingState.source_fields_without_current_grist_target[e.key]={...cfg,status:'identified_but_unmapped',action:'preserve_in_extraction_json'};
-  mappingSave();renderMapping();msg(`${jsonField} n'est plus mappé.`);
-}
-function drawMappingLines(){
-  const svg=$("mappingLines"), board=$("mappingBoard");if(!svg||!board||!mappingState)return;
-  const r=board.getBoundingClientRect();svg.setAttribute('viewBox',`0 0 ${r.width} ${r.height}`);svg.innerHTML='';
-  mappingAllEntries().filter(e=>e.cfg.target_column).forEach(({cfg})=>{
-    const a=document.querySelector(`[data-port-source="${CSS.escape(cfg.json_field)}"]`),b=document.querySelector(`[data-port-target="${CSS.escape(cfg.target_column)}"]`);if(!a||!b)return;
-    const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
-    const x1=ar.left+ar.width/2-r.left,y1=ar.top+ar.height/2-r.top,x2=br.left+br.width/2-r.left,y2=br.top+br.height/2-r.top,dx=Math.max(60,(x2-x1)*.42);
-    const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',`M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`);p.setAttribute('class','mapping-link'+(mappingSelectedSource===cfg.json_field?' selected':''));p.dataset.source=cfg.json_field;p.style.pointerEvents='stroke';p.onclick=()=>selectMappingSource(cfg.json_field);p.ondblclick=e=>{e.preventDefault();e.stopPropagation();disconnectMapping(cfg.json_field)};p.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();if(confirm(`Supprimer la liaison ${cfg.json_field} → ${cfg.target_column} ?`))disconnectMapping(cfg.json_field)};svg.appendChild(p);
-  });
-  if(mappingPendingSource&&mappingDragPoint&&document.body.classList.contains('mapping-connecting')){
-    const a=document.querySelector(`[data-port-source="${CSS.escape(mappingPendingSource)}"]`);if(a){const ar=a.getBoundingClientRect();const x1=ar.left+ar.width/2-r.left,y1=ar.top+ar.height/2-r.top,x2=mappingDragPoint.x-r.left,y2=mappingDragPoint.y-r.top,dx=Math.max(50,Math.abs(x2-x1)*.35);const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',`M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`);p.setAttribute('class','mapping-link mapping-link-preview');svg.appendChild(p)}}
-}
-function ruleField(label,html,help=''){return `<label class="mapping-rule-field"><span>${label}</span>${html}${help?`<small>${mappingEsc(help)}</small>`:''}</label>`}
-function mappingTargetOptions(current){
-  const targets=[...mappingTargetMeta().keys()].sort((a,b)=>a.localeCompare(b,'fr'));
-  if(current&&!targets.includes(current))targets.unshift(current);
-  return `<select data-map-edit="target_column"><option value="">— Non mappé —</option>${targets.map(t=>`<option value="${mappingEsc(t)}" ${t===current?'selected':''}>${mappingEsc(t)}</option>`).join('')}</select>`;
-}
-function renderMappingRuleEditor(jsonField){
-  const e=mappingEntryByJson(jsonField);if(!e)return;
-  const c=e.cfg;$("mappingRuleSubtitle").textContent=`${c.json_field}${c.target_column?' → '+c.target_column:' · non mappé'}`;
-  $("mappingDisconnectBtn").classList.toggle('hidden',!c.target_column);$("mappingDisconnectBtn").onclick=()=>disconnectMapping(jsonField);
-  const ref=c.reference||{};
-  $("mappingRuleEditor").innerHTML=`
-    ${ruleField('Champ JSON',`<input data-map-edit="json_field" value="${mappingEsc(c.json_field)}">`,'Nom stable attendu dans le JSON extrait.')}
-    ${ruleField('Colonne Grist',mappingTargetOptions(c.target_column||''),'Choisissez une autre colonne pour remapper. Sélectionnez « Non mappé » pour supprimer la liaison.')}
-    ${ruleField('Type cible',`<input data-map-edit="target_type" value="${mappingEsc(c.target_type||'')}" placeholder="Text, Date, Ref:…">`)}
-    ${ruleField('À identifier dans le document',`<textarea data-map-edit="identify" rows="5">${mappingEsc(c.identify||'')}</textarea>`,'Instruction donnée à l’IA. Une information non trouvée doit rester null.')}
-    <div class="mapping-rule-grid">
-      ${ruleField('Obligatoire',`<select data-map-edit="required"><option value="false" ${!c.required?'selected':''}>Non</option><option value="true" ${c.required?'selected':''}>Oui</option></select>`)}
-      ${ruleField('Si absent',`<input data-map-edit="when_missing" value="${mappingEsc(c.when_missing||c.when_missing_on_update||'')}">`)}
-    </div>
-    ${ruleField('Exemples',`<input data-map-edit="examples" value="${mappingEsc((c.examples_from_current_pdf||[]).join(' | '))}">`,'Séparer les exemples par |.')}
-    <div class="mapping-ref-box ${String(c.target_type||'').startsWith('Ref:')?'':'hidden'}" id="mappingRefBox">
-      <strong>Résolution de référence</strong>
-      ${ruleField('Table référente',`<input data-map-ref="table" value="${mappingEsc(ref.table||String(c.target_type||'').replace('Ref:',''))}">`)}
-      ${ruleField('Colonne de recherche',`<input data-map-ref="lookup_column" value="${mappingEsc(ref.lookup_column||'Nom')}">`)}
-      ${ruleField('Créer si absent',`<select data-map-ref="create_if_missing"><option value="true" ${ref.create_if_missing!==false?'selected':''}>Oui</option><option value="false" ${ref.create_if_missing===false?'selected':''}>Non</option></select>`)}
-    </div>
-    ${c.transform?`<details class="mapping-advanced"><summary>Transformation</summary><textarea id="mappingTransformEditor" rows="8">${mappingEsc(typeof c.transform==='string'?JSON.stringify(c.transform):JSON.stringify(c.transform,null,2))}</textarea><button id="mappingApplyTransformBtn">Appliquer la transformation</button></details>`:''}
-  `;
-  document.querySelectorAll('[data-map-edit]').forEach(el=>el.onchange=()=>updateMappingRule(jsonField,el));
-  document.querySelectorAll('[data-map-ref]').forEach(el=>el.onchange=()=>updateMappingRef(jsonField,el));
-  const tf=$("mappingApplyTransformBtn");if(tf)tf.onclick=()=>{try{const e=mappingEntryByJson(jsonField);let v=JSON.parse($("mappingTransformEditor").value);e.cfg.transform=v;mappingSave();msg('Transformation mise à jour.')}catch(err){msg('JSON transformation invalide : '+err.message)}};
-}
-function updateMappingRule(jsonField,el){
-  let e=mappingEntryByJson(jsonField);if(!e)return;
-  const k=el.dataset.mapEdit;
-  if(k==='required')e.cfg.required=el.value==='true';
-  else if(k==='examples')e.cfg.examples_from_current_pdf=el.value.split('|').map(x=>x.trim()).filter(Boolean);
-  else if(k==='target_column'){
-    const target=el.value.trim();if(target){ensureMappedEntry(jsonField,target);if(!mappingTargetMeta().has(target))mappingExtraTargets.push(target)}else{disconnectMapping(jsonField);return}
-  } else if(k==='json_field'){
-    const nv=el.value.trim();if(!nv){msg('Le champ JSON ne peut pas être vide.');return}e.cfg.json_field=nv;mappingSelectedSource=nv;mappingPendingSource=nv;
-  } else e.cfg[k]=el.value;
-  mappingSave();renderMapping();
-}
-function updateMappingRef(jsonField,el){
-  const e=mappingEntryByJson(jsonField);if(!e)return;e.cfg.reference=e.cfg.reference||{};
-  const k=el.dataset.mapRef;e.cfg.reference[k]=k==='create_if_missing'?(el.value==='true'):el.value;
-  mappingSave();
-}
-function validateMapping(show=true){
-  const errors=[],warnings=[];if(!mappingState)return {errors:['Mapping non chargé'],warnings};
-  const seen=new Set();mappingAllEntries().forEach(({cfg})=>{
-    if(!cfg.json_field)errors.push('Un champ JSON est vide.');
-    if(seen.has(cfg.json_field))errors.push(`Champ JSON dupliqué : ${cfg.json_field}`);seen.add(cfg.json_field);
-    if(cfg.required&&!cfg.identify)warnings.push(`${cfg.json_field} est obligatoire sans règle identify.`);
-    if(String(cfg.target_type||'').startsWith('Ref:')){if(!cfg.reference?.table)errors.push(`${cfg.json_field} : table de référence absente.`);if(!cfg.reference?.lookup_column)errors.push(`${cfg.json_field} : colonne de recherche absente.`)}
-  });
-  if(!mappingState.target?.table)errors.push('Table cible absente.');
-  const box=$("mappingValidation");if(show&&box){box.classList.remove('hidden','ok','bad');box.classList.add(errors.length?'bad':'ok');box.innerHTML=`<strong>${errors.length?'Mapping invalide':'Mapping valide'}</strong><div>${errors.length?errors.map(x=>'• '+mappingEsc(x)).join('<br>'):'Aucune erreur bloquante.'}</div>${warnings.length?`<div class="mapping-warnings">${warnings.map(x=>'⚠ '+mappingEsc(x)).join('<br>')}</div>`:''}`}
-  return {errors,warnings};
-}
-function exportMapping(){
-  const v=validateMapping(true);if(v.errors.length){msg('Corrigez les erreurs avant export.');return}
-  const blob=new Blob([JSON.stringify(mappingState,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mapping-produit.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);msg('mapping-produit.json exporté.');
-}
-async function importMappingFile(file){
-  try{const parsed=JSON.parse(await file.text());if(!parsed.fields||!parsed.target)throw new Error('Structure de mapping non reconnue');mappingState=parsed;mappingSelectedSource=null;mappingPendingSource=null;mappingExtraTargets=[];mappingSave();renderMapping();validateMapping(true);msg('Mapping importé.')}catch(e){msg('Import impossible : '+e.message)}
-}
-async function resetMapping(){
-  if(!confirm('Réinitialiser le mapping Produit à la version fournie avec l’application ?'))return;
-  localStorage.removeItem(MAPPING_STORAGE_KEY);mappingState=null;mappingSelectedSource=null;mappingPendingSource=null;mappingExtraTargets=[];await loadDefaultMapping();renderMapping();msg('Mapping réinitialisé.');
-}
-function initMappingUi(){
-  if(!$("mappingImportBtn"))return;
-  $("mappingImportBtn").onclick=()=>$("mappingFileInput").click();
-  $("mappingFileInput").onchange=e=>{const f=e.target.files?.[0];if(f)importMappingFile(f);e.target.value=''};
-  $("mappingExportBtn").onclick=exportMapping;$("mappingValidateBtn").onclick=()=>validateMapping(true);$("mappingResetBtn").onclick=resetMapping;
-  $("mappingAddTargetBtn").onclick=()=>{const v=$("mappingNewTarget").value.trim();if(!v)return;if(!mappingExtraTargets.includes(v))mappingExtraTargets.push(v);$("mappingNewTarget").value='';renderMapping()};
-  $("mappingApplyRawBtn").onclick=()=>{try{mappingState=JSON.parse($("mappingRawJson").value);mappingSave();mappingSelectedSource=null;renderMapping();validateMapping(true);msg('JSON brut appliqué.')}catch(e){msg('JSON invalide : '+e.message)}};
-}
-initMappingUi();
-loadDefaultMapping().then(renderMapping).catch(e=>msg('Erreur mapping : '+e.message));
+$("executeBtn").onclick=()=>{if(!confirm("Appliquer réellement ce plan dans Grist ?"))return;msg("Exécution protégée : moteur d'upsert réel à brancher après validation du schéma et des clés de matching.")};
+
+$("saveConnBtn").onclick=saveConn;function saveConn(){localStorage.setItem(CONNKEY,JSON.stringify({server:$("gristServer").value.trim().replace(/\/$/,""),doc:$("gristDoc").value.trim(),key:$("gristKey").value.trim()}));msg("Connexion mémorisée localement")}
+$("testConnBtn").onclick=loadSchema;
+async function api(path,opt={}){const c=JSON.parse(localStorage.getItem(CONNKEY)||"{}");const r=await fetch(c.server+path,{...opt,headers:{Authorization:"Bearer "+c.key,"Content-Type":"application/json",...(opt.headers||{})}});if(!r.ok)throw new Error("HTTP "+r.status+" "+await r.text());return r.json()}
+async function loadSchema(){saveConn();const c=JSON.parse(localStorage.getItem(CONNKEY)||"{}");try{const t=await api(`/api/docs/${encodeURIComponent(c.doc)}/tables`);state.schema={};for(const table of t.tables||[]){const x=await api(`/api/docs/${encodeURIComponent(c.doc)}/tables/${encodeURIComponent(table.id)}/columns?hidden=true`);state.schema[table.id]=x.columns||[]} $("connStatus").textContent=`Connecté · ${Object.keys(state.schema).length} table(s) chargée(s)`;renderEditor();suggestMapping();msg("Schéma Grist chargé")}catch(e){$("connStatus").textContent="Erreur : "+e.message}}
+init();
