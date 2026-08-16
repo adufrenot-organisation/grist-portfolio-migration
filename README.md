@@ -74,3 +74,6 @@ La v2.6 :
 - compteur de colonnes visibles ;
 - message explicite si seules les colonnes connues par le mapping sont disponibles ;
 - tentative automatique de chargement du schéma après import d'un mapping si une connexion Grist est mémorisée.
+
+## v2.8
+Trois vues synchronisées du même mapping : graphique, tableau manuel et JSON brut. La vue tableau permet d'ajouter/supprimer et modifier directement les liaisons, tables, colonnes, types et règles Ref.
