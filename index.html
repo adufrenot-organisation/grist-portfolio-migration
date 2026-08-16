@@ -2,22 +2,22 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GRIST. Migration PMO — v2.6 IMPORT-FIX</title>
-<link rel="stylesheet" href="migration-v2.8.css">
+<title>GRIST. Migration PMO — v3.0 GRIST-INTÉGRÉ</title>
+<link rel="stylesheet" href="migration-v3.0.css">
 </head>
 <body>
 <header>
-  <div><b>🔄 GRIST. MIGRATION PMO</b><span class="version">v2.8.0</span></div>
+  <div><b>🔄 GRIST. MIGRATION PMO</b><span class="version">v3.0.0</span></div>
   <nav>
     <button class="tab active" data-view="workspace">Atelier</button>
     <button class="tab" data-view="mappings">Mappings</button>
     <button class="tab" data-view="simulate">Simulation</button>
-    <button class="tab" data-view="settings">Connexion Grist</button>
+    <button class="tab" data-view="settings">Contexte Grist</button>
   </nav>
 </header>
 <div id="banner" class="banner hidden"></div>
 
-<div id="buildSignature" style="position:fixed;left:8px;bottom:8px;z-index:9999;font:11px monospace;background:#111827;color:#fff;padding:5px 7px;border-radius:6px;opacity:.85">BUILD 2.8 · 3 vues synchronisées</div><main>
+<div id="buildSignature" style="position:fixed;left:8px;bottom:8px;z-index:9999;font:11px monospace;background:#111827;color:#fff;padding:5px 7px;border-radius:6px;opacity:.85">BUILD 3.0 · Grist intégré</div><main>
 <section id="workspace" class="view">
   <div class="hero">
     <div><h1>Atelier de migration</h1><p>Charge un JSON, construis ou sélectionne un mapping, corrige les données de travail, simule puis applique.</p></div>
@@ -51,10 +51,10 @@
     <select id="libFamily"><option value="produit">Produit</option><option value="projet">Projet</option><option value="autre">Autre</option></select>
     <select id="libMapping"></select>
     <button id="createBlankBtn" class="primary">＋ Nouveau</button><button id="duplicateBtn">Dupliquer</button>
-    <button id="importMapBtn">📂 Charger un mapping JSON</button><input id="mapFile" type="file" accept=".json,application/json" hidden><span class="build-badge">IMPORT v2.8</span>
+    <button id="importMapBtn">📂 Charger un mapping JSON</button><input id="mapFile" type="file" accept=".json,application/json" hidden><span class="build-badge">IMPORT v3.0</span>
     <button id="exportMapBtn">Exporter</button><button id="deleteMapBtn" class="danger">Supprimer</button>
   </div>
-  <div id="importDebug" class="import-debug">Importeur v2.8 prêt.</div>
+  <div id="importDebug" class="import-debug">Importeur v3.0 prêt.</div>
   <div class="mappingmeta">
     <input id="mapName" placeholder="Nom du mapping"><input id="mapId" placeholder="Identifiant technique">
     <input id="mapDescription" placeholder="Description">
@@ -68,7 +68,7 @@
 <div id="manualMappingView" class="manual-mapping-view hidden">
 <div class="manual-toolbar"><button id="manualAddRule" class="primary">＋ Ajouter une liaison</button><span>Édition manuelle du même mapping.</span></div>
 <div class="manual-table-wrap"><table class="manual-mapping-table"><thead><tr>
-<th>Champ JSON</th><th>Table</th><th>Colonne</th><th>Type métier</th><th>Type Grist</th><th>Table Ref</th><th>Clé Ref</th><th>Créer Ref</th><th>Identify / règle</th><th></th>
+<th>Champ JSON</th><th>Table</th><th>Colonne</th><th>Type métier</th><th>Type Grist</th><th>Transformation</th><th>Table Ref</th><th>Clé Ref</th><th>Créer Ref</th><th>Identify / règle</th><th></th>
 </tr></thead><tbody id="manualRulesBody"></tbody></table></div></div>
 <div id="rawMappingView" class="raw-mapping-view hidden">
 <div class="manual-toolbar"><button id="rawApplyBtn" class="primary">Appliquer le JSON</button><button id="rawFormatBtn">Reformater</button><span id="rawJsonStatus"></span></div>
@@ -133,15 +133,33 @@
 </section>
 
 <section id="settings" class="view hidden">
-  <div class="hero"><div><h1>Connexion Grist</h1><p>Utilisée pour lire le schéma, comparer les données et exécuter la migration.</p></div></div>
-  <article class="card narrow">
-    <div class="formrow"><label>Serveur</label><input id="gristServer" placeholder="https://..."></div>
-    <div class="formrow"><label>Document ID</label><input id="gristDoc"></div>
-    <div class="formrow"><label>Clé API</label><input id="gristKey" type="password"></div>
-    <div class="toolbar"><button id="saveConnBtn">Mémoriser localement</button><button id="testConnBtn" class="primary">Tester & charger le schéma</button></div>
-    <div id="connStatus" class="summary"></div>
-  </article>
+  <div class="hero">
+    <div>
+      <h1>Contexte Grist</h1>
+      <p>Migration utilise directement le document Grist dans lequel ce widget est installé. Aucune URL, aucun Document ID et aucune clé API à saisir.</p>
+    </div>
+    <button id="reloadGristContextBtn" class="primary">↻ Recharger le schéma</button>
+  </div>
+
+  <div class="grid2">
+    <article class="card">
+      <h2>Document courant</h2>
+      <div id="gristContextStatus" class="summary">Initialisation du contexte Grist…</div>
+      <div id="gristContextDetails" class="context-details"></div>
+    </article>
+    <article class="card">
+      <h2>Capacités</h2>
+      <div class="capability-list">
+        <div>✓ Lecture automatique des tables et colonnes</div>
+        <div>✓ Lecture des données pour la simulation</div>
+        <div>✓ Résolution future des Ref / RefList dans le document courant</div>
+        <div>✓ Écriture via <code>grist.docApi.applyUserActions</code> après validation</div>
+      </div>
+      <div class="summary">Le mode API externe n'est plus nécessaire pour l'usage normal de ce module dans ton document.</div>
+    </article>
+  </div>
 </section>
 </main>
-<script src="migration-v2.8.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<script src="migration-v3.0.js"></script>
 </body></html>

@@ -77,3 +77,23 @@ La v2.6 :
 
 ## v2.8
 Trois vues synchronisées du même mapping : graphique, tableau manuel et JSON brut. La vue tableau permet d'ajouter/supprimer et modifier directement les liaisons, tables, colonnes, types et règles Ref.
+
+## v2.9 — transformations
+Chaque liaison peut porter une transformation : table de correspondance (ex. XXX → Toto), défaut, préfixe, suffixe, majuscules, minuscules ou trim. La simulation affiche valeur source → valeur transformée.
+
+
+## v3.0 — Grist intégré
+
+Migration fonctionne maintenant dans le contexte du document Grist courant.
+
+- inclusion de `grist-plugin-api.js`;
+- `grist.ready({requiredAccess:"full"})`;
+- récupération automatique du nom du document;
+- `grist.docApi.listTables()` pour lister les tables;
+- lecture de `_grist_Tables` et `_grist_Tables_column` pour construire le schéma complet;
+- toutes les tables et colonnes sont immédiatement disponibles dans l'éditeur de mapping;
+- lecture des données via `grist.docApi.fetchTable`;
+- primitives d'écriture via `grist.docApi.applyUserActions`;
+- suppression de la saisie Serveur / Document ID / clé API du parcours normal.
+
+Le moteur d'exécution finale reste protégé tant que le calcul générique CREATE / UPDATE / SAME et la résolution interactive des Ref ne sont pas finalisés.
