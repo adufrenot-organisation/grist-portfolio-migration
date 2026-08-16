@@ -66,3 +66,11 @@ La v2.6 :
 - charge le mapping historique `fields` ;
 - affiche `Fonctionnalites` et ses cibles connues sans connexion Grist ;
 - utilise de nouveaux noms JS/CSS pour éviter tout cache.
+
+## v2.7 — schéma cible complet
+- si le schéma Grist est chargé, toutes les colonnes de la table cible sont toujours affichées, qu'elles soient mappées ou non ;
+- filtre `Toutes / Non mappées / Mappées` ;
+- recherche par nom/type de colonne ;
+- compteur de colonnes visibles ;
+- message explicite si seules les colonnes connues par le mapping sont disponibles ;
+- tentative automatique de chargement du schéma après import d'un mapping si une connexion Grist est mémorisée.
