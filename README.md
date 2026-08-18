@@ -97,3 +97,13 @@ Migration fonctionne maintenant dans le contexte du document Grist courant.
 - suppression de la saisie Serveur / Document ID / clé API du parcours normal.
 
 Le moteur d'exécution finale reste protégé tant que le calcul générique CREATE / UPDATE / SAME et la résolution interactive des Ref ne sont pas finalisés.
+
+
+## v3.1 — Mapping sémantique
+Correction UX de l'éditeur graphique :
+- la colonne de gauche affiche le vrai `json_field` (`produit`, `categorie`, `fonctionnalite`, `id`...) au lieu des clés techniques historiques (`parent`, `nom`, `code`...) ;
+- les traits utilisent également ces noms sémantiques ;
+- lorsqu'aucun JSON de travail n'est chargé, l'éditeur affiche un type attendu lisible au lieu de `null` ;
+- la table cible conserve toutes ses colonnes visibles, mappées ou non ;
+- les champs Produit `categorie` et Projet `module` peuvent pointer vers `Fonctionnalites.Categ_module` ;
+- l'inspecteur et la création de nouvelles liaisons travaillent sur le champ JSON réel.
