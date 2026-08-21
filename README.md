@@ -107,3 +107,13 @@ Correction UX de l'éditeur graphique :
 - la table cible conserve toutes ses colonnes visibles, mappées ou non ;
 - les champs Produit `categorie` et Projet `module` peuvent pointer vers `Fonctionnalites.Categ_module` ;
 - l'inspecteur et la création de nouvelles liaisons travaillent sur le champ JSON réel.
+
+
+## v3.3.0 — JSON enrichi et valeurs fixes
+- Ajout de champs au JSON de travail avant mapping, avec type et valeur commune ou vide.
+- Renommage et suppression de champs dans le JSON de travail.
+- Export du JSON modifié ; le fichier source chargé reste intact.
+- Les nouveaux champs deviennent immédiatement disponibles dans le mapping.
+- Nouvelle source de mapping `fixed_value` pour injecter une constante vers n'importe quelle colonne Grist.
+- Les valeurs fixes apparaissent dans la vue graphique, l'inspecteur, le JSON brut et la simulation.
+- Les transformations existantes s'appliquent aussi aux valeurs fixes.

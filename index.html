@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GRIST. Migration PMO — v3.2 PMO-BRAND</title>
-<link rel="stylesheet" href="migration-v3.2.css">
+<link rel="stylesheet" href="migration-v3.3.css">
 </head>
 <body>
 <header class="pmo-migration-header">
   <div class="pmo-brand-lockup">
     <div class="pmo-brand-badge">PMO</div>
     <div class="pmo-brand-copy"><strong>Migration</strong><small>Imports & mappings</small></div>
-    <span class="version pmo-version">v3.2.0</span>
+    <span class="version pmo-version">v3.3.0</span>
   </div>
   <nav>
     <button class="tab active" data-view="workspace">Atelier</button>
@@ -21,7 +21,7 @@
 </header>
 <div id="banner" class="banner hidden"></div>
 
-<div id="buildSignature" style="position:fixed;left:8px;bottom:8px;z-index:9999;font:11px monospace;background:#111827;color:#fff;padding:5px 7px;border-radius:6px;opacity:.85">BUILD 3.2 · PMO Suite UI</div><main>
+<div id="buildSignature" style="position:fixed;left:8px;bottom:8px;z-index:9999;font:11px monospace;background:#111827;color:#fff;padding:5px 7px;border-radius:6px;opacity:.85">BUILD 3.3 · JSON enrichi + constantes</div><main>
 <section id="workspace" class="view">
   <div class="hero">
     <div><h1>Atelier de migration</h1><p>Charge un JSON, construis ou sélectionne un mapping, corrige les données de travail, simule puis applique.</p></div>
@@ -32,7 +32,7 @@
       <h2>1. Données JSON</h2>
       <div class="toolbar">
         <button id="loadDataBtn" class="primary">Charger JSON</button><input id="dataFile" type="file" accept=".json,application/json" hidden>
-        <button id="exportWorkBtn">Exporter JSON corrigé</button>
+        <button id="addJsonFieldBtn">＋ Ajouter un champ</button><button id="manageJsonFieldsBtn">Gérer les champs</button><button id="exportWorkBtn">Exporter JSON modifié</button>
       </div>
       <div id="dataSummary" class="summary">Aucun fichier chargé.</div>
       <div id="dataGrid" class="tablewrap"></div>
@@ -55,10 +55,10 @@
     <select id="libFamily"><option value="produit">Produit</option><option value="projet">Projet</option><option value="autre">Autre</option></select>
     <select id="libMapping"></select>
     <button id="createBlankBtn" class="primary">＋ Nouveau</button><button id="duplicateBtn">Dupliquer</button>
-    <button id="importMapBtn">📂 Charger un mapping JSON</button><input id="mapFile" type="file" accept=".json,application/json" hidden><span class="build-badge">IMPORT v3.2</span>
+    <button id="importMapBtn">📂 Charger un mapping JSON</button><input id="mapFile" type="file" accept=".json,application/json" hidden><span class="build-badge">IMPORT v3.3</span>
     <button id="exportMapBtn">Exporter</button><button id="deleteMapBtn" class="danger">Supprimer</button>
   </div>
-  <div id="importDebug" class="import-debug">Importeur v3.2 prêt.</div>
+  <div id="importDebug" class="import-debug">Importeur v3.3 prêt.</div>
   <div class="mappingmeta">
     <input id="mapName" placeholder="Nom du mapping"><input id="mapId" placeholder="Identifiant technique">
     <input id="mapDescription" placeholder="Description">
@@ -92,7 +92,7 @@
       </div>
     </div>
     <div class="mapping-tools-actions">
-      <button id="addSourceBtn">＋ Champ JSON</button>
+      <button id="addSourceBtn">＋ Champ JSON</button><button id="addFixedValueBtn">＋ Valeur fixe</button>
       <button id="addManualTargetBtn">＋ Colonne cible manuelle</button>
       <button id="clearConnectionsBtn">Effacer les liaisons</button>
     </div>
@@ -101,7 +101,7 @@
   <div id="graphEditor" class="graph-editor">
     <div class="graph-pane source-pane">
       <div class="graph-head">
-        <div><b>CHAMPS JSON</b><small>Tire une liaison depuis le point bleu.</small></div>
+        <div><b>SOURCES</b><small>Champs JSON et valeurs fixes du mapping.</small></div>
       </div>
       <div id="sourceFields" class="graph-list"></div>
     </div>
@@ -165,5 +165,37 @@
 </section>
 </main>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
-<script src="migration-v3.2.js"></script>
+<script src="migration-v3.3.js"></script>
+
+<dialog id="jsonFieldDialog" class="migration-dialog">
+  <form method="dialog" id="jsonFieldForm">
+    <div class="dialog-title"><div><b>Ajouter un champ au JSON de travail</b><small>Le fichier original n'est jamais modifié.</small></div><button value="cancel">×</button></div>
+    <div class="dialog-grid">
+      <label>Nom du champ<input id="jfName" required placeholder="ex. source_import"></label>
+      <label>Type<select id="jfType"><option value="string">Texte</option><option value="number">Nombre</option><option value="boolean">Booléen</option><option value="date">Date</option></select></label>
+      <label>Remplissage<select id="jfMode"><option value="same">Même valeur pour toutes les lignes</option><option value="empty">Laisser vide</option></select></label>
+      <label id="jfValueLabel">Valeur<input id="jfValue"></label>
+    </div>
+    <div class="dialog-actions"><button value="cancel">Annuler</button><button id="jfApply" type="button" class="primary">Ajouter au JSON</button></div>
+  </form>
+</dialog>
+
+<dialog id="jsonManageDialog" class="migration-dialog wide-dialog">
+  <form method="dialog"><div class="dialog-title"><div><b>Gérer les champs JSON</b><small>Renommer ou supprimer un champ dans le JSON de travail.</small></div><button value="cancel">×</button></div>
+  <div id="jsonFieldManager"></div><div class="dialog-actions"><button value="cancel">Fermer</button></div></form>
+</dialog>
+
+<dialog id="fixedValueDialog" class="migration-dialog">
+  <form method="dialog" id="fixedValueForm">
+    <div class="dialog-title"><div><b>Mapper une valeur fixe</b><small>Cette constante sera injectée pour chaque ligne pendant la migration.</small></div><button value="cancel">×</button></div>
+    <div class="dialog-grid">
+      <label>Valeur<input id="fvValue" placeholder="ex. Projet"></label>
+      <label>Type<select id="fvType"><option value="string">Texte</option><option value="number">Nombre</option><option value="boolean">Booléen</option><option value="date">Date</option></select></label>
+      <label>Table cible<select id="fvTable"></select></label>
+      <label>Colonne cible<select id="fvColumn"></select></label>
+    </div>
+    <div class="dialog-actions"><button value="cancel">Annuler</button><button id="fvApply" type="button" class="primary">Créer la liaison</button></div>
+  </form>
+</dialog>
+
 </body></html>
