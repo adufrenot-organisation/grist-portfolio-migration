@@ -1139,3 +1139,130 @@ renderSimulation=function(){
  $("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Action</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.row}</td><td>${x.action}</td><td>${x.changes.map(c=>c.transformed?`${c.target} ← ${c.fixed?"<b>[FIXE]</b> ":""}<span class="sim-source">${graphEsc(c.sourceValue)}</span> → <span class="sim-transformed">${graphEsc(c.value)}</span>`:`${c.target} ← ${c.fixed?"<b>[FIXE]</b> ":""}${graphEsc(c.value)}`).join("<br>")}</td><td>${x.errors.join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
  $("executeBtn").disabled=err>0||!s.length||!Object.keys(state.schema).length;
 };
+
+
+// ===== v3.3.1 : correctif éditeur mapping (drag + vues tableau/json) =====
+(function(){
+  function byId(id){ return document.getElementById(id); }
+
+  // --- Navigation des 3 vues : branchement robuste et idempotent.
+  function setMappingMode331(mode){
+    graphState.editorMode=mode;
+    const graph=byId("graphicalMappingView"), table=byId("manualMappingView"), raw=byId("rawMappingView");
+    if(graph) graph.classList.toggle("hidden",mode!=="graph");
+    if(table) table.classList.toggle("hidden",mode!=="table");
+    if(raw) raw.classList.toggle("hidden",mode!=="json");
+    [["mappingViewGraph","graph"],["mappingViewTable","table"],["mappingViewJson","json"]].forEach(([id,v])=>{
+      const b=byId(id); if(b)b.classList.toggle("active",v===mode);
+    });
+    if(mode==="graph"){
+      graphRender();
+      requestAnimationFrame(()=>requestAnimationFrame(()=>graphDraw()));
+    }else if(mode==="table"){
+      renderManualMapping();
+    }else{
+      syncRawV28();
+      const st=byId("rawJsonStatus"); if(st){st.textContent="Synchronisé avec le mapping courant";st.className="raw-json-ok";}
+    }
+  }
+  window.setMappingMode331=setMappingMode331;
+
+  [["mappingViewGraph","graph"],["mappingViewTable","table"],["mappingViewJson","json"]].forEach(([id,mode])=>{
+    const b=byId(id);
+    if(b)b.addEventListener("click",e=>{e.preventDefault();setMappingMode331(mode)},true);
+  });
+
+  // --- Drag de liaison avec Pointer Events.
+  // Le SVG ne doit jamais capturer le pointeur pendant le drag.
+  let drag=null;
+
+  function pointInCanvas(clientX,clientY){
+    const wrap=byId("graphCanvasWrap");
+    if(!wrap)return null;
+    const r=wrap.getBoundingClientRect();
+    return {x:clientX-r.left,y:clientY-r.top};
+  }
+  function beginDrag(e,port){
+    if(e.button!==undefined && e.button!==0)return;
+    drag={source:port.dataset.source,pointerId:e.pointerId};
+    graphState.dragSource=drag.source;
+    graphState.tempPoint=pointInCanvas(e.clientX,e.clientY);
+    document.body.classList.add("mapping-dragging");
+    try{port.setPointerCapture?.(e.pointerId)}catch(_){}
+    e.preventDefault();e.stopPropagation();
+    graphDraw();
+  }
+  function moveDrag(e){
+    if(!drag)return;
+    graphState.tempPoint=pointInCanvas(e.clientX,e.clientY);
+    graphDraw();
+    e.preventDefault();
+  }
+  function endDrag(e){
+    if(!drag)return;
+    const source=drag.source;
+    // elementFromPoint bypasses the temporary SVG path and finds the real target port.
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const target=el?.closest?.(".target-port");
+    drag=null;graphState.dragSource=null;graphState.tempPoint=null;
+    document.body.classList.remove("mapping-dragging");
+    if(target){
+      graphAddConnection(source,target.dataset.table,target.dataset.column);
+    }else{
+      graphDraw();
+    }
+    e.preventDefault();
+  }
+
+  document.addEventListener("pointerdown",e=>{
+    const p=e.target.closest?.(".source-port");
+    if(p)beginDrag(e,p);
+  },true);
+  document.addEventListener("pointermove",moveDrag,true);
+  document.addEventListener("pointerup",endDrag,true);
+  document.addEventListener("pointercancel",endDrag,true);
+
+  // Clic source puis clic cible : alternative au drag, utile en tactile/iframe.
+  let clickSource=null;
+  document.addEventListener("click",e=>{
+    const sp=e.target.closest?.(".source-port");
+    if(sp){
+      clickSource=sp.dataset.source;
+      document.querySelectorAll(".source-port").forEach(x=>x.classList.toggle("armed",x===sp));
+      const h=byId("connectionHint"); if(h)h.textContent=`Source sélectionnée : ${clickSource} — clique une colonne cible`;
+      return;
+    }
+    const tp=e.target.closest?.(".target-port");
+    if(tp && clickSource){
+      graphAddConnection(clickSource,tp.dataset.table,tp.dataset.column);
+      clickSource=null;
+      document.querySelectorAll(".source-port").forEach(x=>x.classList.remove("armed"));
+      const h=byId("connectionHint"); if(h)h.textContent="Glisser-déposer ou cliquer source puis cible pour mapper";
+    }
+  },true);
+
+  // Synchronisation systématique après toute modification de mapping.
+  const oldAdd=graphAddConnection;
+  graphAddConnection=function(source,table,column){
+    oldAdd(source,table,column);
+    renderManualMapping();
+    syncRawV28();
+  };
+
+  // JSON brut : validation live + Ctrl/Cmd+Enter pour appliquer.
+  const raw=byId("rawMappingEditor");
+  if(raw){
+    raw.addEventListener("input",()=>{
+      const st=byId("rawJsonStatus");
+      try{JSON.parse(raw.value);st.textContent="JSON valide — non appliqué";st.className="raw-json-ok"}
+      catch(e){st.textContent="JSON invalide : "+e.message;st.className="raw-json-error"}
+    });
+    raw.addEventListener("keydown",e=>{
+      if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();byId("rawApplyBtn")?.click()}
+    });
+  }
+
+  // Recalcule les traits pendant scroll/resize.
+  window.addEventListener("resize",()=>{if(graphState.editorMode==="graph")graphDraw()});
+  document.querySelectorAll(".graph-list").forEach(x=>x.addEventListener("scroll",()=>{if(graphState.editorMode==="graph")graphDraw()},{passive:true}));
+})();

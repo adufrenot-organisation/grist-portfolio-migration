@@ -117,3 +117,15 @@ Correction UX de l'éditeur graphique :
 - Nouvelle source de mapping `fixed_value` pour injecter une constante vers n'importe quelle colonne Grist.
 - Les valeurs fixes apparaissent dans la vue graphique, l'inspecteur, le JSON brut et la simulation.
 - Les transformations existantes s'appliquent aussi aux valeurs fixes.
+
+
+## v3.3.1 — correctif éditeur de mapping
+
+- création des liaisons par **glisser-déposer** avec Pointer Events ;
+- alternative **clic sur la source puis clic sur la cible** ;
+- le SVG des traits ne bloque plus le dépôt sur les ports ;
+- vues **Graphique / Tableau / JSON brut** rebranchées explicitement ;
+- synchronisation des trois vues après ajout d'une liaison ;
+- validation du JSON brut pendant la saisie ;
+- `Ctrl+Entrée` / `Cmd+Entrée` applique le JSON brut ;
+- recalcul des traits après redimensionnement et défilement.

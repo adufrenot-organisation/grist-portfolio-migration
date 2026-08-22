@@ -229,3 +229,15 @@ header.pmo-migration-header .tab.active{color:#fff!important;border-bottom-color
 .fixed-source-card .mapping-badge{background:#ede9fe!important;color:#6d28d9!important}
 .fixed-rule-row td:first-child{background:#faf5ff}
 #jsonFieldManager table{width:100%}#jsonFieldManager input{width:100%}
+
+/* v3.3.1 — interaction mapping */
+.mapping-svg{pointer-events:none!important}
+.mapping-path{pointer-events:stroke!important}
+.mapping-path.temp{pointer-events:none!important}
+.port{position:relative;z-index:5;touch-action:none;user-select:none}
+.source-port.armed{box-shadow:0 0 0 5px rgba(37,99,235,.20)!important;transform:scale(1.15)}
+body.mapping-dragging,body.mapping-dragging *{cursor:crosshair!important}
+body.mapping-dragging .target-port{box-shadow:0 0 0 5px rgba(37,99,235,.15)!important}
+#manualMappingView:not(.hidden),#rawMappingView:not(.hidden),#graphicalMappingView:not(.hidden){display:block}
+#rawMappingEditor{display:block;width:100%;min-height:520px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;white-space:pre;tab-size:2}
+.raw-json-ok{color:#067647}.raw-json-error{color:#b42318}
