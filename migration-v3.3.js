@@ -12,7 +12,7 @@ function infer(v){if(v==null)return"null";if(Array.isArray(v))return"array";if(t
 function activeMapping(){return (state.library[state.family]||[]).find(m=>m.mapping_id===state.mappingId)||null}
 function saveLib(){localStorage.setItem(LIBKEY,JSON.stringify(state.library))}
 function normalize(m,f="produit"){m=m||{};m.mapping_type=m.mapping_type||f;m.mapping_id=m.mapping_id||slug(m.name||"mapping");m.name=m.name||m.mapping_id;m.description=m.description||"";m.rules=Array.isArray(m.rules)?m.rules:legacyRules(m);m.targets=Array.isArray(m.targets)?m.targets:[];return m}
-function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||"Texte",grist_type:r.grist_type||r.target_type||r.type||"",identify:r.identify||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false}));return out}
+function legacyRules(m){const out=[];Object.entries(m.fields||{}).forEach(([src,r])=>out.push({source:r.json_field||src,json_field:r.json_field||src,original_field_key:src,target_table:r.target_table||m.target?.table||"Fonctionnalites",target_column:r.grist_column||r.target_column||r.column||"",business_type:r.business_type||r.expected_semantic_type||"Texte",grist_type:r.grist_type||r.target_type||r.type||"",identify:r.identify||"",transform:r.transform||"",required:!!r.required,when_missing:r.when_missing||"",ref_table:r.ref_table||r.reference?.table||"",ref_match:r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom",create_if_missing:r.create_if_missing??r.reference?.create_if_missing??false,reference:r.reference||null}));return out}
 function switchView(id){document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!==id));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.view===id));if(id==="mappings"){requestAnimationFrame(()=>{renderEditor();requestAnimationFrame(()=>{try{graphDraw()}catch(e){}})})}if(id==="simulate")renderSimulation()}
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 
@@ -97,26 +97,225 @@ if(applyMappingJsonBtn) applyMappingJsonBtn.onclick=()=>{
   }catch(e){msg("JSON invalide : "+e.message)}
 };
 
-$("goSimBtn").onclick=()=>{switchView("simulate");runSimulation()};$("runSimulationBtn").onclick=runSimulation;$("backEditBtn").onclick=()=>switchView("workspace");
-function runSimulation(){
- const m=activeMapping(),rows=rowsOf(state.dataWork);state.simulation=[];
- if(!m||!rows.length){renderSimulation();return}
- rows.forEach((row,i)=>{const changes=[],errors=[];m.rules.forEach(r=>{if(!r.target_table||!r.target_column)return;const v=row[r.source];if(v===undefined)return;changes.push({source:r.source,target:r.target_table+"."+r.target_column,value:v,business:r.business_type});if((r.business_type==="Date")&&v&&!/^\d{4}-\d\d-\d\d/.test(String(v)))errors.push(`${r.source}: date à vérifier`)});
- state.simulation.push({row:i+1,action:errors.length?"ERROR":"PREVIEW",changes,errors})});
- renderSimulation()
+
+$("goSimBtn").onclick=()=>{switchView("simulate");runSimulation()};
+$("runSimulationBtn").onclick=runSimulation;
+$("backEditBtn").onclick=()=>switchView("workspace");
+
+function simNorm(v){
+  return String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().replace(/\s+/g," ").toLowerCase();
 }
-function renderSimulation(){
- const s=state.simulation,err=s.filter(x=>x.errors.length).length;$("simStats").innerHTML=[["Lignes",s.length],["Prêtes",s.length-err],["Erreurs",err]].map(x=>`<div class=stat><b>${x[1]}</b>${x[0]}</div>`).join("");
- $("simWarnings").innerHTML=state.schema&&Object.keys(state.schema).length?"":`<div class="warn">Le contexte Grist n'est pas encore chargé : la simulation ne peut pas comparer les enregistrements réels.</div>`;
- $("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Action</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.row}</td><td>${x.action}</td><td>${x.changes.map(c=>`${c.target} ← ${c.source} = ${c.value}`).join("<br>")}</td><td>${x.errors.join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
- $("executeBtn").disabled=err>0||!s.length||!Object.keys(state.schema).length;
+function simDate(v){
+  if(v==null||v==="")return null;
+  if(typeof v==="number")return v>1000000000000?Math.floor(v/1000):Math.floor(v);
+  const str=String(v).trim();
+  let m=str.match(/^(\d{4})-T([1-4])$/i);
+  if(m){
+    const y=+m[1],q=+m[2],month=q*3,day=new Date(Date.UTC(y,month,0)).getUTCDate();
+    return Math.floor(Date.UTC(y,month-1,day)/1000);
+  }
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)){
+    const ms=Date.parse(str+"T00:00:00Z"); return Number.isFinite(ms)?Math.floor(ms/1000):null;
+  }
+  const ms=Date.parse(str);return Number.isFinite(ms)?Math.floor(ms/1000):null;
 }
-$("executeBtn").onclick=async()=>{
-  if(!state.gristReady){msg("Le contexte Grist n'est pas chargé.");return}
-  if(!confirm("Appliquer réellement ce plan dans le document Grist courant ?"))return;
-  msg("Exécution protégée : le contexte Grist est prêt ; il reste à finaliser CREATE/UPDATE/SAME et la résolution des Ref avant d'autoriser les écritures.");
+function simTransform(v,r){
+  if(v==="__CLEAR__")return null;
+  if(v==null||v==="")return v;
+  const t=String(r.grist_type||"");
+  const bt=String(r.business_type||"");
+  const tr=typeof r.transform==="string"?r.transform:(r.transform?.type||"");
+  if(tr==="to_string")return String(v);
+  if(tr==="normalize_percentage_or_number"||bt==="Pourcentage"){
+    let n=typeof v==="string"&&v.includes("%")?parseFloat(v.replace(",",".").replace("%",""))/100:Number(v);
+    if(Number.isFinite(n)&&n>1&&n<=100)n=n/100;
+    return Number.isFinite(n)?n:null;
+  }
+  if(t==="Numeric"||bt==="Nombre"){const n=Number(String(v).replace(",","."));return Number.isFinite(n)?n:null}
+  if(t==="Bool"||bt==="Booléen"){
+    if(typeof v==="boolean")return v;
+    return /^(1|true|oui|yes|actif)$/i.test(String(v).trim());
+  }
+  if(t==="Date"||bt==="Date"||tr==="period_to_date")return simDate(v);
+  return v;
+}
+function simSchemaColumn(table,column){
+  return (state.schema?.[table]||[]).find(c=>(c.id||c.colId)===column)||null;
+}
+function simRowsCached(table){
+  return tableDataToRows(state.gristTableData?.[table]);
+}
+function simRuleSource(r){return r.json_field||r.source||r.original_definition?.json_field||r.original_field_key||""}
+function simMatchKeys(m,table,rules,fields){
+  const configured=[...(m.matching?.preferred_key||[]),...(m.matching?.fallback_key||[])];
+  const groups=[];
+  for(const keyGroup of [m.matching?.preferred_key,m.matching?.fallback_key]){
+    if(!Array.isArray(keyGroup)||!keyGroup.length)continue;
+    const cols=[];
+    for(const key of keyGroup){
+      const nk=simNorm(key);
+      const r=rules.find(x=>simNorm(x.original_field_key)===nk||simNorm(simRuleSource(x))===nk||simNorm(x.target_column)===nk);
+      if(r&&Object.prototype.hasOwnProperty.call(fields,r.target_column))cols.push(r.target_column);
+    }
+    if(cols.length===keyGroup.length)groups.push(cols);
+  }
+  if(groups.length)return groups;
+  const code=rules.find(r=>/^(code|id)$/i.test(String(r.target_column||""))&&fields[r.target_column]!=null);
+  if(code)return [[code.target_column]];
+  const name=rules.find(r=>/^(nom|name|titre|libelle)$/i.test(String(r.target_column||""))&&fields[r.target_column]!=null);
+  return name?[[name.target_column]]:[];
+}
+function simFindMatch(table,fields,keyGroups){
+  const rows=simRowsCached(table);
+  for(const keys of keyGroups){
+    const hits=rows.filter(row=>keys.every(k=>simNorm(row[k])===simNorm(fields[k])));
+    if(hits.length===1)return {row:hits[0],keys};
+    if(hits.length>1)return {ambiguous:true,rows:hits,keys};
+  }
+  return {row:null,keys:keyGroups[0]||[]};
+}
+function simComparable(v){
+  if(Array.isArray(v))return JSON.stringify(v);
+  if(v==null)return "";
+  return String(v);
+}
+function simSame(row,fields){
+  return Object.entries(fields).every(([k,v])=>simComparable(row?.[k])===simComparable(v));
+}
+async function simResolveReference(value,r,mode="simulate"){
+  if(value==null||value==="")return {value:null};
+  const refTable=r.ref_table||String(r.grist_type||"").split(":")[1]||r.reference?.table||"";
+  if(!refTable)return {value,error:`${simRuleSource(r)}: table de référence inconnue`};
+  if(!state.gristTableData[refTable]){
+    try{await ensureGristTableLoaded(refTable)}catch(e){return {value,error:`${refTable}: ${e.message}`}}
+  }
+  const lookup=r.ref_match||r.reference?.lookup_column||"Nom";
+  const rows=simRowsCached(refTable);
+  const hits=rows.filter(x=>simNorm(x[lookup])===simNorm(value));
+  if(hits.length===1)return {value:hits[0].id};
+  if(hits.length>1)return {value,error:`${refTable}.${lookup}: plusieurs correspondances pour "${value}"`};
+  if(!(r.create_if_missing??r.reference?.create_if_missing))return {value,error:`${refTable}.${lookup}: "${value}" introuvable`};
+  if(mode==="simulate")return {value:null,pending:{table:refTable,lookup,sourceValue:value,rule:r}};
+  const createFields={};
+  const tpl=r.reference?.create_fields||{};
+  if(Object.keys(tpl).length){
+    for(const [k,v] of Object.entries(tpl))createFields[k]=v==="$value"?value:v;
+  }else createFields[lookup]=value;
+  await applyGristActions([["AddRecord",refTable,null,createFields]]);
+  state.gristTableData[refTable]=await grist.docApi.fetchTable(refTable);
+  const again=simRowsCached(refTable).filter(x=>simNorm(x[lookup])===simNorm(value));
+  if(again.length!==1)return {value,error:`Impossible de créer/résoudre ${refTable}.${lookup}="${value}"`};
+  return {value:again[0].id,createdRef:true};
+}
+
+async function buildSimulationPlan(){
+  const m=activeMapping(),sourceRows=rowsOf(state.dataWork),plan=[];
+  if(!m||!sourceRows.length)return plan;
+  await preloadSimulationTables();
+  const targetTables=[...new Set((m.rules||[]).map(r=>r.target_table).filter(Boolean))];
+  for(const t of targetTables){if(!state.gristTableData[t])try{await ensureGristTableLoaded(t)}catch(_){}}
+  for(let i=0;i<sourceRows.length;i++){
+    const sourceRow=sourceRows[i];
+    for(const table of targetTables){
+      const rules=(m.rules||[]).filter(r=>r.target_table===table&&r.target_column);
+      if(!rules.length)continue;
+      const fields={},errors=[],pendingRefs=[],trace=[];
+      for(const r of rules){
+        const src=simRuleSource(r),raw=sourceRow[src];
+        if(raw===undefined||raw===null||raw===""){
+          if(r.required||/error/i.test(String(r.when_missing||"")))errors.push(`${src}: valeur obligatoire manquante`);
+          continue;
+        }
+        const col=simSchemaColumn(table,r.target_column);
+        if(!col){errors.push(`${table}.${r.target_column}: colonne absente du schéma`);continue}
+        if(col.isFormula){errors.push(`${table}.${r.target_column}: colonne formule non modifiable`);continue}
+        let v=simTransform(raw,r);
+        if(String(col.type||r.grist_type||"").startsWith("Ref:")){
+          const rr=await simResolveReference(v,{...r,grist_type:col.type},"simulate");
+          if(rr.error)errors.push(rr.error);
+          if(rr.pending)pendingRefs.push({column:r.target_column,...rr.pending});
+          else v=rr.value;
+        }
+        fields[r.target_column]=v;
+        trace.push({source:src,target:`${table}.${r.target_column}`,raw,value:v});
+      }
+      const keyGroups=simMatchKeys(m,table,rules,fields);
+      const match=simFindMatch(table,fields,keyGroups);
+      let action="CREATE",rowId=null;
+      if(match.ambiguous){action="ERROR";errors.push(`${table}: rapprochement ambigu sur ${match.keys.join("+")}`)}
+      else if(match.row){rowId=match.row.id;action=simSame(match.row,fields)?"SAME":"UPDATE"}
+      if(errors.length)action="ERROR";
+      plan.push({sourceRow:i+1,table,fields,trace,pendingRefs,matchKeys:match.keys||[],rowId,action,errors});
+    }
+  }
+  return plan;
+}
+
+runSimulation=async function(){
+  state.simulation=[];
+  if(!activeMapping()||!rowsOf(state.dataWork).length){renderSimulation();return}
+  try{
+    if(!state.gristReady){msg("Contexte Grist non chargé : simulation locale impossible pour CREATE/UPDATE.");return}
+    state.simulation=await buildSimulationPlan();
+    renderSimulation();
+  }catch(e){console.error(e);msg("Simulation impossible : "+(e.message||e))}
 };
 
+function renderSimulation(){
+  const s=state.simulation||[];
+  const err=s.filter(x=>x.errors?.length).length;
+  const create=s.filter(x=>x.action==="CREATE").length,update=s.filter(x=>x.action==="UPDATE").length,same=s.filter(x=>x.action==="SAME").length;
+  $("simStats").innerHTML=[["Plans",s.length],["CREATE",create],["UPDATE",update],["SAME",same],["Erreurs",err]].map(x=>`<div class=stat><b>${x[1]}</b>${x[0]}</div>`).join("");
+  const refs=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0);
+  $("simWarnings").innerHTML=refs?`<div class="warn">${refs} référence(s) absente(s) seront créées lors de l'application uniquement si la règle "Créer Ref" est activée.</div>`:"";
+  $("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr>
+    <td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td>
+    <td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td>
+    <td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}`).join("<br>")}</td>
+    <td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
+  $("executeBtn").disabled=err>0||!s.length||!state.gristReady;
+}
+
+async function materializePlanEntry(entry){
+  const m=activeMapping(),rules=(m.rules||[]).filter(r=>r.target_table===entry.table&&r.target_column);
+  const fields={...entry.fields};
+  for(const pending of entry.pendingRefs||[]){
+    const r=rules.find(x=>x.target_column===pending.column);
+    const rr=await simResolveReference(pending.sourceValue,r,"apply");
+    if(rr.error)throw new Error(rr.error);
+    fields[pending.column]=rr.value;
+  }
+  return fields;
+}
+
+$("executeBtn").onclick=async()=>{
+  const plan=state.simulation||[];
+  if(!state.gristReady){msg("Le contexte Grist n'est pas chargé.");return}
+  if(!plan.length){msg("Lance d'abord la simulation.");return}
+  if(plan.some(x=>x.errors?.length)){msg("Corrige les erreurs avant d'appliquer.");return}
+  const creates=plan.filter(x=>x.action==="CREATE").length,updates=plan.filter(x=>x.action==="UPDATE").length;
+  if(!confirm(`Appliquer la simulation dans Grist ?\n\n${creates} création(s)\n${updates} mise(s) à jour\n${plan.filter(x=>x.action==="SAME").length} inchangé(s)\n\nCette opération modifie réellement le document courant.`))return;
+  $("executeBtn").disabled=true;
+  let applied=0;
+  try{
+    for(const entry of plan){
+      if(entry.action==="SAME")continue;
+      const fields=await materializePlanEntry(entry);
+      if(entry.action==="CREATE")await applyGristActions([["AddRecord",entry.table,null,fields]]);
+      else if(entry.action==="UPDATE")await applyGristActions([["UpdateRecord",entry.table,entry.rowId,fields]]);
+      applied++;
+      state.gristTableData[entry.table]=await grist.docApi.fetchTable(entry.table);
+    }
+    msg(`${applied} opération(s) appliquée(s) dans Grist.`);
+    await runSimulation();
+  }catch(e){
+    console.error("APPLICATION MIGRATION",e);
+    msg("Application interrompue : "+(e.message||e));
+    await runSimulation();
+  }finally{
+    $("executeBtn").disabled=false;
+  }
+};
 
 // ===== v3.0 : contexte Grist intégré au widget =====
 state.gristReady=false;
@@ -223,21 +422,13 @@ async function updateGristRecord(tableId,rowId,fields){
   return applyGristActions([["UpdateRecord",tableId,rowId,fields]]);
 }
 
-// La simulation peut maintenant lire les tables du document courant.
-// La comparaison CREATE / UPDATE / SAME restera gouvernée par les clés de matching du mapping.
 async function preloadSimulationTables(){
   const m=activeMapping(); if(!m)return;
-  const tables=[...new Set((m.rules||[]).map(r=>r.target_table).filter(Boolean))];
+  const tables=[...new Set((m.rules||[]).flatMap(r=>[r.target_table,r.ref_table||r.reference?.table]).filter(Boolean))];
   for(const t of tables){
     try{await ensureGristTableLoaded(t)}catch(e){console.warn("Préchargement",t,e)}
   }
 }
-
-const _runSimulationIntegrated=runSimulation;
-runSimulation=async function(){
-  if(state.gristReady) await preloadSimulationTables();
-  return _runSimulationIntegrated();
-};
 
 const reloadBtn=$("reloadGristContextBtn");
 if(reloadBtn) reloadBtn.onclick=async()=>{

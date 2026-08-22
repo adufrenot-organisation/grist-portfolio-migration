@@ -129,3 +129,21 @@ Correction UX de l'éditeur graphique :
 - validation du JSON brut pendant la saisie ;
 - `Ctrl+Entrée` / `Cmd+Entrée` applique le JSON brut ;
 - recalcul des traits après redimensionnement et défilement.
+
+
+## v3.3.2 — application réelle de la simulation
+
+La simulation n'est plus un simple aperçu.
+
+- comparaison avec les tables du document Grist courant ;
+- calcul `CREATE / UPDATE / SAME / ERROR` ;
+- rapprochement à partir de `matching.preferred_key` / `fallback_key` lorsqu'ils existent ;
+- fallback sur `Code`, puis `Nom` ;
+- contrôle des colonnes absentes ou colonnes formule non modifiables ;
+- résolution des références `Ref:` par la colonne `ref_match` ;
+- création d'une référence absente uniquement si `create_if_missing` est activé ;
+- application réelle avec `AddRecord` / `UpdateRecord` via `grist.docApi.applyUserActions` ;
+- confirmation explicite avant toute écriture ;
+- re-simulation automatique après application.
+
+Les entrées `SAME` ne sont pas réécrites.

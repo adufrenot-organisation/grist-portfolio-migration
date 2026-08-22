@@ -241,3 +241,8 @@ body.mapping-dragging .target-port{box-shadow:0 0 0 5px rgba(37,99,235,.15)!impo
 #manualMappingView:not(.hidden),#rawMappingView:not(.hidden),#graphicalMappingView:not(.hidden){display:block}
 #rawMappingEditor{display:block;width:100%;min-height:520px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;white-space:pre;tab-size:2}
 .raw-json-ok{color:#067647}.raw-json-error{color:#b42318}
+
+/* v3.3.2 — simulation exécutable */
+#simTable td{vertical-align:top}
+#simTable td:nth-child(3) b{display:inline-block;padding:3px 7px;border-radius:999px;background:#eef4ff;color:#175cd3}
+#simWarnings .warn{margin:10px 0}
