@@ -147,3 +147,29 @@ pour empêcher tout ancien handler de reprendre la main.
 
 ## v3.4.3 — création automatique des références
 Les colonnes Ref sont traitées comme références inscriptibles. Si la référence n'existe pas et `create_if_missing=true`, la simulation annonce sa création, puis l'application crée d'abord la ligne référencée, relit son ID et écrit cet ID dans la colonne Ref cible.
+
+
+## v3.4.4 — correction KeyError sur création des références
+
+Le moteur ne fait plus confiance à la casse des noms de colonnes définis dans le mapping.
+
+Avant de créer une référence :
+- la colonne de rapprochement est résolue contre le schéma Grist réel ;
+- les `create_fields` sont convertis vers les IDs techniques réels des colonnes ;
+- une colonne inconnue bloque la simulation avec un message explicite ;
+- le plan affiche maintenant le payload exact qui sera envoyé lors du `CREATE`.
+
+En cas d'échec Grist, le message d'erreur précise la table et les champs envoyés.
+
+
+## v3.4.5 — moteur de références générique
+
+La logique de résolution/création s'applique désormais à toutes les colonnes de référence détectées
+dans le schéma Grist, et non à une liste codée en dur.
+
+- `Ref:<Table>` : recherche, création optionnelle, récupération de l'ID, écriture de l'ID ;
+- `RefList:<Table>` : résolution de chaque valeur, création optionnelle des références absentes,
+  déduplication des IDs puis écriture de la liste ;
+- la table cible est toujours déduite du type Grist réel ;
+- les colonnes de rapprochement et `create_fields` sont résolus contre les IDs techniques réels ;
+- une ambiguïté ou une colonne inconnue bloque la simulation avant écriture.

@@ -61,24 +61,163 @@
   const addBase=graphAddConnection;
   graphAddConnection=function(s,t,c){addBase(s,t,c);try{renderManualMapping()}catch(_){}try{syncRawV28()}catch(_){}};
 
+  function resolveColumnId(table,wanted){
+    const cols=state.schema?.[table]||[];
+    const raw=String(wanted||"").trim();
+    if(!raw)return raw;
+
+    // Exact technical ID first.
+    let c=cols.find(x=>(x.id||x.colId)===raw);
+    if(c)return c.id||c.colId;
+
+    // Case-insensitive technical ID.
+    c=cols.find(x=>norm(x.id||x.colId)===norm(raw));
+    if(c)return c.id||c.colId;
+
+    // Then label, useful when a mapping was produced from a display label.
+    c=cols.find(x=>norm(x.label||"")===norm(raw));
+    if(c)return c.id||c.colId;
+
+    return null;
+  }
+
+  function normalizeCreateFields(table,fields){
+    const out={},unknown=[];
+    for(const [key,value] of Object.entries(fields||{})){
+      const resolved=resolveColumnId(table,key);
+      if(!resolved)unknown.push(key);
+      else out[resolved]=value;
+    }
+    return {fields:out,unknown};
+  }
+
   async function resolveRef(value,r,mode="simulate"){
     if(value==null||value==="")return{value:null};
+
     const table=r.ref_table||String(r.grist_type||"").split(":")[1]||r.reference?.table||"";
     if(!table)return{error:`${sourceName(r)} : table de référence inconnue`};
-    try{await ensureGristTableLoaded(table)}catch(e){return{error:`${table} : ${e.message}`}}
-    const lookup=r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom";
-    const rows=cachedRows(table),hits=rows.filter(x=>norm(x[lookup])===norm(value));
-    if(hits.length===1)return{value:hits[0].id,detail:`${table}.${lookup}="${value}" → #${hits[0].id}`};
-    if(hits.length>1)return{error:`${table}.${lookup} : plusieurs correspondances pour "${value}"`};
+
+    try{await ensureGristTableLoaded(table)}
+    catch(e){return{error:`${table} : ${e.message}`}}
+
+    const requestedLookup=r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom";
+    const lookup=resolveColumnId(table,requestedLookup);
+    if(!lookup){
+      const available=(state.schema?.[table]||[]).map(c=>c.id||c.colId).filter(Boolean).join(", ");
+      return{error:`${table} : colonne de rapprochement "${requestedLookup}" introuvable. Colonnes : ${available}`};
+    }
+
+    const rows=cachedRows(table);
+    const hits=rows.filter(x=>norm(x[lookup])===norm(value));
+
+    if(hits.length===1)return{
+      value:hits[0].id,
+      detail:`${table}.${lookup}="${value}" → #${hits[0].id}`
+    };
+    if(hits.length>1)return{
+      error:`${table}.${lookup} : plusieurs correspondances pour "${value}"`
+    };
+
     const allow=r.create_if_missing??r.reference?.create_if_missing??false;
-    if(!allow)return{error:`${table}.${lookup} : "${value}" introuvable et création interdite`};
-    const createFields={},tpl=r.reference?.create_fields||{};
-    if(Object.keys(tpl).length)Object.entries(tpl).forEach(([k,v])=>createFields[k]=v==="$value"?value:v); else createFields[lookup]=value;
-    if(mode==="simulate")return{pending:{table,lookup,sourceValue:value,createFields},detail:`${table}.${lookup}="${value}" absent → CREATE ${table}`};
-    await grist.docApi.applyUserActions([["AddRecord",table,null,createFields]]);
+    if(!allow)return{
+      error:`${table}.${lookup} : "${value}" introuvable et création interdite`
+    };
+
+    const rawCreateFields={};
+    const tpl=r.reference?.create_fields||{};
+    if(Object.keys(tpl).length){
+      Object.entries(tpl).forEach(([k,v])=>rawCreateFields[k]=v==="$value"?value:v);
+    }else{
+      rawCreateFields[lookup]=value;
+    }
+
+    const normalized=normalizeCreateFields(table,rawCreateFields);
+    if(normalized.unknown.length){
+      return{
+        error:`${table} : champ(s) de création inconnu(s) : ${normalized.unknown.join(", ")}`
+      };
+    }
+
+    // Ensure the lookup itself is always populated on a newly created reference.
+    if(!Object.prototype.hasOwnProperty.call(normalized.fields,lookup)){
+      normalized.fields[lookup]=value;
+    }
+
+    const payloadText=Object.entries(normalized.fields)
+      .map(([k,v])=>`${k}=${JSON.stringify(v)}`).join(", ");
+
+    if(mode==="simulate"){
+      return{
+        pending:{
+          table,
+          lookup,
+          sourceValue:value,
+          createFields:normalized.fields
+        },
+        detail:`${table}.${lookup}="${value}" absent → CREATE ${table} (${payloadText})`
+      };
+    }
+
+    try{
+      await grist.docApi.applyUserActions([["AddRecord",table,null,normalized.fields]]);
+    }catch(e){
+      throw new Error(`CREATE ${table} impossible [${payloadText}] : ${e?.message||e}`);
+    }
+
     state.gristTableData[table]=await grist.docApi.fetchTable(table);
+
     const created=cachedRows(table).filter(x=>norm(x[lookup])===norm(value));
-    return created.length===1?{value:created[0].id,detail:`CREATE ${table} #${created[0].id}`}:{error:`Impossible de créer/résoudre ${table}.${lookup}="${value}"`};
+    if(created.length!==1){
+      return{error:`Référence créée dans ${table}, mais impossible de retrouver ${lookup}="${value}"`};
+    }
+
+    return{
+      value:created[0].id,
+      detail:`CREATE ${table} #${created[0].id}`
+    };
+  }
+
+  function normalizeRefListInput(value){
+    if(value==null||value==="")return [];
+    if(Array.isArray(value))return value.filter(v=>v!==null&&v!=="");
+    if(typeof value==="string"){
+      const s=value.trim();
+      if(!s)return [];
+      // JSON array string.
+      if(s.startsWith("[")&&s.endsWith("]")){
+        try{
+          const arr=JSON.parse(s);
+          if(Array.isArray(arr))return arr.filter(v=>v!==null&&v!=="");
+        }catch(_){}
+      }
+      // Common separators for imported data.
+      return s.split(/\s*[;|]\s*/).filter(Boolean);
+    }
+    return [value];
+  }
+
+  async function resolveRefList(value,r,mode="simulate"){
+    const values=normalizeRefListInput(value);
+    const ids=[],pending=[],details=[],errors=[];
+
+    for(const item of values){
+      const rr=await resolveRef(item,r,mode);
+      if(rr.error){errors.push(rr.error);continue}
+      if(rr.pending){
+        pending.push({...rr.pending,sourceValue:item});
+        details.push(rr.detail||`${item} → création prévue`);
+      }else{
+        ids.push(rr.value);
+        details.push(rr.detail||`${item} → #${rr.value}`);
+      }
+    }
+
+    return {
+      value: ids,
+      pending,
+      details,
+      errors
+    };
   }
 
   function matchGroups(m,rules,fields){
@@ -118,13 +257,22 @@
           }
           let value=transform(raw,{...r,grist_type:col.type||r.grist_type});
           let refDetail="";
-          if(String(col.type||r.grist_type||"").startsWith("Ref:")){
-            const rr=await resolveRef(value,{...r,grist_type:col.type||r.grist_type},"simulate");
+          const effectiveType=String(col.type||r.grist_type||"");
+          if(effectiveType.startsWith("Ref:")){
+            const rr=await resolveRef(value,{...r,grist_type:effectiveType},"simulate");
             if(rr.error)errors.push(rr.error);
-            if(rr.pending)pendingRefs.push({column:r.target_column,...rr.pending}); else value=rr.value;
+            if(rr.pending)pendingRefs.push({column:r.target_column,kind:"Ref",...rr.pending});
+            else value=rr.value;
             refDetail=rr.detail||"";
+          }else if(effectiveType.startsWith("RefList:")){
+            const rr=await resolveRefList(value,{...r,grist_type:effectiveType},"simulate");
+            rr.errors.forEach(e=>errors.push(e));
+            rr.pending.forEach(p=>pendingRefs.push({column:r.target_column,kind:"RefList",...p}));
+            value=rr.value;
+            refDetail=rr.details.join(" ; ");
           }
-          fields[r.target_column]=value;trace.push({source:r.source_type==="fixed_value"?"[FIXE]":src,target:`${table}.${r.target_column}`,raw,refDetail})
+          fields[r.target_column]=value;
+          trace.push({source:r.source_type==="fixed_value"?"[FIXE]":src,target:`${table}.${r.target_column}`,raw,refDetail})
         }
         const groups=matchGroups(m,rules,fields),match=findMatch(table,fields,groups);let action="CREATE",rowId=null;
         if(match.ambiguous){action="ERROR";errors.push(`${table} : rapprochement ambigu sur ${match.keys.join("+")}`)}else if(match.row){rowId=match.row.id;action=same(match.row,fields)?"SAME":"UPDATE"}if(errors.length)action="ERROR";
@@ -140,19 +288,47 @@
     el("simStats").innerHTML=[["Plans",s.length],["CREATE",count("CREATE")],["UPDATE",count("UPDATE")],["SAME",count("SAME")],["Erreurs",err]].map(([k,v])=>`<div class=stat><b>${v}</b>${k}</div>`).join("");
     {
       const pending=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0);
-      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.3 chargé</div>`+
+      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.5 chargé</div>`+
         (pending?'<div class="warn">Des références absentes seront créées à l’application si autorisé.</div>':"");
     }
     el("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td><td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td><td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}${c.refDetail?`<br><span class="sim-ref-detail">↳ ${graphEsc(c.refDetail)}</span>`:""}`).join("<br>")}</td><td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
     el("executeBtn").disabled=!s.length||err>0||!state.gristReady;
   };
   async function materialize(entry){
-    const m=activeMapping(),rules=(m.rules||[]).filter(r=>r.target_table===entry.table&&r.target_column),fields={...entry.fields};
+    const m=activeMapping();
+    const rules=(m.rules||[]).filter(r=>r.target_table===entry.table&&r.target_column);
+    const fields={...entry.fields};
+
+    // Regroup pending references per target column.
+    const grouped=new Map();
     for(const p of entry.pendingRefs||[]){
-      const r=rules.find(x=>x.target_column===p.column);
-      const enriched={...r,reference:{...(r?.reference||{}),create_fields:p.createFields||r?.reference?.create_fields}};
-      const rr=await resolveRef(p.sourceValue,enriched,"apply");
-      if(rr.error)throw new Error(rr.error);fields[p.column]=rr.value;
+      if(!grouped.has(p.column))grouped.set(p.column,[]);
+      grouped.get(p.column).push(p);
+    }
+
+    for(const [column,items] of grouped.entries()){
+      const r=rules.find(x=>x.target_column===column);
+      if(!r)throw new Error(`Règle de référence introuvable pour ${entry.table}.${column}`);
+
+      const kind=items[0]?.kind||"Ref";
+
+      if(kind==="Ref"){
+        const p=items[0];
+        const enriched={...r,reference:{...(r?.reference||{}),create_fields:p.createFields||r?.reference?.create_fields}};
+        const rr=await resolveRef(p.sourceValue,enriched,"apply");
+        if(rr.error)throw new Error(rr.error);
+        fields[column]=rr.value;
+      }else{
+        // Preserve already-resolved IDs from simulation, then create/resolve missing ones.
+        const resolved=Array.isArray(fields[column])?[...fields[column]]:[];
+        for(const p of items){
+          const enriched={...r,reference:{...(r?.reference||{}),create_fields:p.createFields||r?.reference?.create_fields}};
+          const rr=await resolveRef(p.sourceValue,enriched,"apply");
+          if(rr.error)throw new Error(rr.error);
+          resolved.push(rr.value);
+        }
+        fields[column]=[...new Set(resolved.filter(v=>v!==null&&v!==""))];
+      }
     }
     return fields;
   }
@@ -185,7 +361,7 @@
   // Indicateur visible immédiatement, indépendant de la simulation.
   const boot=document.getElementById("runtimeBootStatus");
   if(boot){
-    boot.textContent="✓ Runtime migration v3.4.3 chargé";
+    boot.textContent="✓ Runtime migration v3.4.5 chargé";
     boot.className="runtime-boot-ok";
   }
 
@@ -203,5 +379,5 @@
     window.applySimulation();
   },true);
 
-  console.info("GRIST Migration PMO v3.4.3 runtime chargé");
+  console.info("GRIST Migration PMO v3.4.5 runtime chargé");
 })();
