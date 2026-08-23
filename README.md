@@ -123,3 +123,10 @@ Correction UX de l'éditeur graphique :
 Reprise de la base 3.3 d'origine avec une couche runtime finale unique pour éviter les conflits des anciennes redéfinitions.
 Mapping graphique/tableau/JSON, simulation et application Grist sont rebranchés en dernier.
 Le package ne contient plus qu'un `migration.js` et un `migration.css` actifs.
+
+
+## v3.4.1 — activation réelle garantie
+
+Suppression physique de l'ancien handler `Exécution protégée`.
+Le bouton `Appliquer réellement dans Grist` est rebranché uniquement sur `applySimulation()`.
+La Simulation affiche `✓ Moteur d'application réel v3.4.1 chargé` lorsque le runtime correct est actif.

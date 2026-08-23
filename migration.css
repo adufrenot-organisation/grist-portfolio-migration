@@ -237,3 +237,5 @@ body.mapping-dragging,body.mapping-dragging *{cursor:crosshair!important}
 #rawMappingEditor{display:block;width:100%;min-height:520px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;white-space:pre;tab-size:2}
 .raw-json-ok{color:#067647}.raw-json-error{color:#b42318}
 #simTable td{vertical-align:top}
+
+.runtime-ok{margin:10px 0;padding:8px 10px;border-radius:8px;background:#ecfdf3;color:#067647;font-weight:700;font-size:12px}

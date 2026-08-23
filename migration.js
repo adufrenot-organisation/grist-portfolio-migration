@@ -111,11 +111,7 @@ function renderSimulation(){
  $("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Action</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.row}</td><td>${x.action}</td><td>${x.changes.map(c=>`${c.target} ← ${c.source} = ${c.value}`).join("<br>")}</td><td>${x.errors.join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
  $("executeBtn").disabled=err>0||!s.length||!Object.keys(state.schema).length;
 }
-$("executeBtn").onclick=async()=>{
-  if(!state.gristReady){msg("Le contexte Grist n'est pas chargé.");return}
-  if(!confirm("Appliquer réellement ce plan dans le document Grist courant ?"))return;
-  msg("Exécution protégée : le contexte Grist est prêt ; il reste à finaliser CREATE/UPDATE/SAME et la résolution des Ref avant d'autoriser les écritures.");
-};
+// v3.4.1 : ancien handler d'exécution protégée supprimé.
 
 
 // ===== v3.0 : contexte Grist intégré au widget =====
@@ -1267,7 +1263,11 @@ renderSimulation=function(){
   window.renderSimulation=function(){
     const s=state.simulation||[],count=a=>s.filter(x=>x.action===a).length,err=s.filter(x=>x.errors?.length).length;
     el("simStats").innerHTML=[["Plans",s.length],["CREATE",count("CREATE")],["UPDATE",count("UPDATE")],["SAME",count("SAME")],["Erreurs",err]].map(([k,v])=>`<div class=stat><b>${v}</b>${k}</div>`).join("");
-    el("simWarnings").innerHTML=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0)?'<div class="warn">Des références absentes seront créées à l’application si autorisé.</div>':"";
+    {
+      const pending=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0);
+      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.1 chargé</div>`+
+        (pending?'<div class="warn">Des références absentes seront créées à l’application si autorisé.</div>':"");
+    }
     el("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td><td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td><td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}`).join("<br>")}</td><td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
     el("executeBtn").disabled=!s.length||err>0||!state.gristReady;
   };
@@ -1286,10 +1286,21 @@ renderSimulation=function(){
     finally{el("executeBtn").disabled=false}
   };
 
-  if(el("goSimBtn"))el("goSimBtn").onclick=()=>{switchView("simulate");runSimulation()};
-  if(el("runSimulationBtn"))el("runSimulationBtn").onclick=()=>runSimulation();
-  if(el("executeBtn"))el("executeBtn").onclick=()=>applySimulation();
+  if(el("goSimBtn")){
+    el("goSimBtn").onclick=null;
+    el("goSimBtn").addEventListener("click",()=>{switchView("simulate");runSimulation()});
+  }
+  if(el("runSimulationBtn")){
+    el("runSimulationBtn").onclick=null;
+    el("runSimulationBtn").addEventListener("click",()=>runSimulation());
+  }
+  if(el("executeBtn")){
+    el("executeBtn").onclick=null;
+    el("executeBtn").addEventListener("click",()=>applySimulation());
+    el("executeBtn").dataset.runtime="3.4.1";
+    el("executeBtn").title="Exécution réelle active — runtime 3.4.1";
+  }
 
   window.addEventListener("resize",()=>{if(graphState.editorMode==="graph")graphDraw()});
-  console.info("GRIST Migration PMO v3.4.0 runtime chargé");
+  console.info("GRIST Migration PMO v3.4.1 runtime chargé");
 })();
