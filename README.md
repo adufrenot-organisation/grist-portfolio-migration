@@ -119,31 +119,7 @@ Correction UX de l'éditeur graphique :
 - Les transformations existantes s'appliquent aussi aux valeurs fixes.
 
 
-## v3.3.1 — correctif éditeur de mapping
-
-- création des liaisons par **glisser-déposer** avec Pointer Events ;
-- alternative **clic sur la source puis clic sur la cible** ;
-- le SVG des traits ne bloque plus le dépôt sur les ports ;
-- vues **Graphique / Tableau / JSON brut** rebranchées explicitement ;
-- synchronisation des trois vues après ajout d'une liaison ;
-- validation du JSON brut pendant la saisie ;
-- `Ctrl+Entrée` / `Cmd+Entrée` applique le JSON brut ;
-- recalcul des traits après redimensionnement et défilement.
-
-
-## v3.3.2 — application réelle de la simulation
-
-La simulation n'est plus un simple aperçu.
-
-- comparaison avec les tables du document Grist courant ;
-- calcul `CREATE / UPDATE / SAME / ERROR` ;
-- rapprochement à partir de `matching.preferred_key` / `fallback_key` lorsqu'ils existent ;
-- fallback sur `Code`, puis `Nom` ;
-- contrôle des colonnes absentes ou colonnes formule non modifiables ;
-- résolution des références `Ref:` par la colonne `ref_match` ;
-- création d'une référence absente uniquement si `create_if_missing` est activé ;
-- application réelle avec `AddRecord` / `UpdateRecord` via `grist.docApi.applyUserActions` ;
-- confirmation explicite avant toute écriture ;
-- re-simulation automatique après application.
-
-Les entrées `SAME` ne sont pas réécrites.
+## v3.4.0 — reconstruction stable
+Reprise de la base 3.3 d'origine avec une couche runtime finale unique pour éviter les conflits des anciennes redéfinitions.
+Mapping graphique/tableau/JSON, simulation et application Grist sont rebranchés en dernier.
+Le package ne contient plus qu'un `migration.js` et un `migration.css` actifs.
