@@ -130,3 +130,16 @@ Le package ne contient plus qu'un `migration.js` et un `migration.css` actifs.
 Suppression physique de l'ancien handler `Exécution protégée`.
 Le bouton `Appliquer réellement dans Grist` est rebranché uniquement sur `applySimulation()`.
 La Simulation affiche `✓ Moteur d'application réel v3.4.1 chargé` lorsque le runtime correct est actif.
+
+
+## v3.4.2 — runtime isolé
+
+Le moteur Simulation/Application est maintenant chargé dans un fichier séparé `migration-runtime.js`,
+après le code legacy. Une erreur dans une ancienne couche ne peut donc plus empêcher le runtime final
+d'être chargé.
+
+L'écran Simulation affiche toujours :
+`✓ Runtime migration v3.4.2 chargé`
+
+Les clics sur `Re-simuler` et `Appliquer réellement dans Grist` sont interceptés en phase capture
+pour empêcher tout ancien handler de reprendre la main.
