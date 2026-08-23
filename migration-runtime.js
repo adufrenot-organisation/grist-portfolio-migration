@@ -66,17 +66,19 @@
     const table=r.ref_table||String(r.grist_type||"").split(":")[1]||r.reference?.table||"";
     if(!table)return{error:`${sourceName(r)} : table de référence inconnue`};
     try{await ensureGristTableLoaded(table)}catch(e){return{error:`${table} : ${e.message}`}}
-    const lookup=r.ref_match||r.reference?.lookup_column||"Nom",rows=cachedRows(table),hits=rows.filter(x=>norm(x[lookup])===norm(value));
-    if(hits.length===1)return{value:hits[0].id};
+    const lookup=r.ref_match||r.reference?.lookup_column||r.reference?.match_column||"Nom";
+    const rows=cachedRows(table),hits=rows.filter(x=>norm(x[lookup])===norm(value));
+    if(hits.length===1)return{value:hits[0].id,detail:`${table}.${lookup}="${value}" → #${hits[0].id}`};
     if(hits.length>1)return{error:`${table}.${lookup} : plusieurs correspondances pour "${value}"`};
-    if(!(r.create_if_missing??r.reference?.create_if_missing??false))return{error:`${table}.${lookup} : "${value}" introuvable`};
-    if(mode==="simulate")return{pending:{table,lookup,sourceValue:value}};
-    const fields={},tpl=r.reference?.create_fields||{};
-    if(Object.keys(tpl).length)Object.entries(tpl).forEach(([k,v])=>fields[k]=v==="$value"?value:v);else fields[lookup]=value;
-    await grist.docApi.applyUserActions([["AddRecord",table,null,fields]]);
+    const allow=r.create_if_missing??r.reference?.create_if_missing??false;
+    if(!allow)return{error:`${table}.${lookup} : "${value}" introuvable et création interdite`};
+    const createFields={},tpl=r.reference?.create_fields||{};
+    if(Object.keys(tpl).length)Object.entries(tpl).forEach(([k,v])=>createFields[k]=v==="$value"?value:v); else createFields[lookup]=value;
+    if(mode==="simulate")return{pending:{table,lookup,sourceValue:value,createFields},detail:`${table}.${lookup}="${value}" absent → CREATE ${table}`};
+    await grist.docApi.applyUserActions([["AddRecord",table,null,createFields]]);
     state.gristTableData[table]=await grist.docApi.fetchTable(table);
     const created=cachedRows(table).filter(x=>norm(x[lookup])===norm(value));
-    return created.length===1?{value:created[0].id}:{error:`Impossible de créer ${table}.${lookup}`}
+    return created.length===1?{value:created[0].id,detail:`CREATE ${table} #${created[0].id}`}:{error:`Impossible de créer/résoudre ${table}.${lookup}="${value}"`};
   }
 
   function matchGroups(m,rules,fields){
@@ -107,10 +109,22 @@
         for(const r of rules){
           const src=sourceName(r),raw=r.source_type==="fixed_value"?r.fixed_value:rows[i][src];
           if(raw===undefined||raw===null||raw===""){if(r.required||/error/i.test(String(r.when_missing||"")))errors.push(`${src||r.target_column} : valeur obligatoire manquante`);continue}
-          const col=schemaCol(table,r.target_column);if(!col){errors.push(`${table}.${r.target_column} : colonne absente`);continue}if(col.isFormula){errors.push(`${table}.${r.target_column} : colonne formule non modifiable`);continue}
+          const col=schemaCol(table,r.target_column);if(!col){errors.push(`${table}.${r.target_column} : colonne absente`);continue}
+          const colType=String(col.type||r.grist_type||"");
+          const hasFormula=Boolean(col.isFormula)&&String(col.formula||"").trim()!=="";
+          if(hasFormula && !colType.startsWith("Ref:") && !colType.startsWith("RefList:")){
+            errors.push(`${table}.${r.target_column} : formule calculée non modifiable`);
+            continue
+          }
           let value=transform(raw,{...r,grist_type:col.type||r.grist_type});
-          if(String(col.type||r.grist_type||"").startsWith("Ref:")){const rr=await resolveRef(value,{...r,grist_type:col.type||r.grist_type},"simulate");if(rr.error)errors.push(rr.error);if(rr.pending)pendingRefs.push({column:r.target_column,...rr.pending});else value=rr.value}
-          fields[r.target_column]=value;trace.push({source:r.source_type==="fixed_value"?"[FIXE]":src,target:`${table}.${r.target_column}`,raw})
+          let refDetail="";
+          if(String(col.type||r.grist_type||"").startsWith("Ref:")){
+            const rr=await resolveRef(value,{...r,grist_type:col.type||r.grist_type},"simulate");
+            if(rr.error)errors.push(rr.error);
+            if(rr.pending)pendingRefs.push({column:r.target_column,...rr.pending}); else value=rr.value;
+            refDetail=rr.detail||"";
+          }
+          fields[r.target_column]=value;trace.push({source:r.source_type==="fixed_value"?"[FIXE]":src,target:`${table}.${r.target_column}`,raw,refDetail})
         }
         const groups=matchGroups(m,rules,fields),match=findMatch(table,fields,groups);let action="CREATE",rowId=null;
         if(match.ambiguous){action="ERROR";errors.push(`${table} : rapprochement ambigu sur ${match.keys.join("+")}`)}else if(match.row){rowId=match.row.id;action=same(match.row,fields)?"SAME":"UPDATE"}if(errors.length)action="ERROR";
@@ -126,15 +140,20 @@
     el("simStats").innerHTML=[["Plans",s.length],["CREATE",count("CREATE")],["UPDATE",count("UPDATE")],["SAME",count("SAME")],["Erreurs",err]].map(([k,v])=>`<div class=stat><b>${v}</b>${k}</div>`).join("");
     {
       const pending=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0);
-      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.2 chargé</div>`+
+      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.3 chargé</div>`+
         (pending?'<div class="warn">Des références absentes seront créées à l’application si autorisé.</div>':"");
     }
-    el("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td><td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td><td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}`).join("<br>")}</td><td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
+    el("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td><td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td><td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}${c.refDetail?`<br><span class="sim-ref-detail">↳ ${graphEsc(c.refDetail)}</span>`:""}`).join("<br>")}</td><td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
     el("executeBtn").disabled=!s.length||err>0||!state.gristReady;
   };
   async function materialize(entry){
     const m=activeMapping(),rules=(m.rules||[]).filter(r=>r.target_table===entry.table&&r.target_column),fields={...entry.fields};
-    for(const p of entry.pendingRefs||[]){const r=rules.find(x=>x.target_column===p.column),rr=await resolveRef(p.sourceValue,r,"apply");if(rr.error)throw new Error(rr.error);fields[p.column]=rr.value}
+    for(const p of entry.pendingRefs||[]){
+      const r=rules.find(x=>x.target_column===p.column);
+      const enriched={...r,reference:{...(r?.reference||{}),create_fields:p.createFields||r?.reference?.create_fields}};
+      const rr=await resolveRef(p.sourceValue,enriched,"apply");
+      if(rr.error)throw new Error(rr.error);fields[p.column]=rr.value;
+    }
     return fields;
   }
   window.applySimulation=async function(){
@@ -166,7 +185,7 @@
   // Indicateur visible immédiatement, indépendant de la simulation.
   const boot=document.getElementById("runtimeBootStatus");
   if(boot){
-    boot.textContent="✓ Runtime migration v3.4.2 chargé";
+    boot.textContent="✓ Runtime migration v3.4.3 chargé";
     boot.className="runtime-boot-ok";
   }
 
@@ -184,5 +203,5 @@
     window.applySimulation();
   },true);
 
-  console.info("GRIST Migration PMO v3.4.2 runtime chargé");
+  console.info("GRIST Migration PMO v3.4.3 runtime chargé");
 })();

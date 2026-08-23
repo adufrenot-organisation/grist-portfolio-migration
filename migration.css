@@ -244,3 +244,5 @@ body.mapping-dragging,body.mapping-dragging *{cursor:crosshair!important}
 .runtime-boot-pending{background:#f2f4f7;color:#667085}
 .runtime-boot-ok{background:#ecfdf3;color:#067647;border:1px solid #abefc6}
 .runtime-boot-error{background:#fef3f2;color:#b42318;border:1px solid #fecdca}
+
+.sim-ref-detail{display:inline-block;margin:2px 0 4px 12px;color:#067647;font-size:11px;font-weight:700}

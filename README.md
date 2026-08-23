@@ -143,3 +143,7 @@ L'écran Simulation affiche toujours :
 
 Les clics sur `Re-simuler` et `Appliquer réellement dans Grist` sont interceptés en phase capture
 pour empêcher tout ancien handler de reprendre la main.
+
+
+## v3.4.3 — création automatique des références
+Les colonnes Ref sont traitées comme références inscriptibles. Si la référence n'existe pas et `create_if_missing=true`, la simulation annonce sa création, puis l'application crée d'abord la ligne référencée, relit son ID et écrit cet ID dans la colonne Ref cible.
