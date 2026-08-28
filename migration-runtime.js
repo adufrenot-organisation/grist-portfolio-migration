@@ -288,7 +288,7 @@
     el("simStats").innerHTML=[["Plans",s.length],["CREATE",count("CREATE")],["UPDATE",count("UPDATE")],["SAME",count("SAME")],["Erreurs",err]].map(([k,v])=>`<div class=stat><b>${v}</b>${k}</div>`).join("");
     {
       const pending=s.reduce((n,x)=>n+(x.pendingRefs?.length||0),0);
-      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.5 chargé</div>`+
+      el("simWarnings").innerHTML=`<div class="runtime-ok">✓ Moteur d'application réel v3.4.7 chargé</div>`+
         (pending?'<div class="warn">Des références absentes seront créées à l’application si autorisé.</div>':"");
     }
     el("simTable").innerHTML=s.length?`<table><thead><tr><th>Ligne</th><th>Table</th><th>Action</th><th>Clé / ID</th><th>Plan</th><th>Erreurs</th></tr></thead><tbody>${s.map(x=>`<tr><td>${x.sourceRow}</td><td>${graphEsc(x.table)}</td><td><b>${x.action}</b></td><td>${x.rowId?`#${x.rowId}`:(x.matchKeys||[]).map(k=>`${graphEsc(k)}=${graphEsc(x.fields[k])}`).join("<br>")||"nouveau"}</td><td>${x.trace.map(c=>`${graphEsc(c.target)} ← ${graphEsc(c.source)} = ${graphEsc(c.raw)}${c.refDetail?`<br><span class="sim-ref-detail">↳ ${graphEsc(c.refDetail)}</span>`:""}`).join("<br>")}</td><td>${(x.errors||[]).map(graphEsc).join("<br>")}</td></tr>`).join("")}</tbody></table>`:"Aucune simulation.";
@@ -361,7 +361,7 @@
   // Indicateur visible immédiatement, indépendant de la simulation.
   const boot=document.getElementById("runtimeBootStatus");
   if(boot){
-    boot.textContent="✓ Runtime migration v3.4.5 chargé";
+    boot.textContent="✓ Runtime migration v3.4.7 chargé";
     boot.className="runtime-boot-ok";
   }
 
@@ -379,5 +379,5 @@
     window.applySimulation();
   },true);
 
-  console.info("GRIST Migration PMO v3.4.5 runtime chargé");
+  console.info("GRIST Migration PMO v3.4.7 runtime chargé");
 })();

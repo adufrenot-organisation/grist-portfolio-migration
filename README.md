@@ -173,3 +173,20 @@ dans le schéma Grist, et non à une liste codée en dur.
 - la table cible est toujours déduite du type Grist réel ;
 - les colonnes de rapprochement et `create_fields` sont résolus contre les IDs techniques réels ;
 - une ambiguïté ou une colonne inconnue bloque la simulation avant écriture.
+
+
+## v3.4.6 — Sécurité applicative
+
+Le module Migration est protégé dès l'entrée par `access.js` v1.1.0.
+
+- Code module : `MIGRATION`.
+- Owner Grist : accès automatique.
+- Autres utilisateurs : profil `Team` + autorisation active dans `DROITS_MODULES`.
+- Absence de droit : page verrouillée, sans initialisation de l'atelier de migration.
+- Les ACL Grist restent la sécurité effective des données et des écritures.
+
+Le module Cockpit RH n'a pas besoin de cette restriction applicative si son accès est volontairement ouvert à tous.
+
+
+## v3.4.7 — Page de blocage simplifiée
+`access.js` v1.2.0 conserve la même garde d'accès mais n'affiche plus aucune information interne sur le contrôle de sécurité.

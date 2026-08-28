@@ -418,8 +418,18 @@ graphInspector=function(){
   }
 };
 
-init();
-setTimeout(initGristWidget,0);
+async function bootMigrationProtected(){
+  // Initialise d'abord le contexte plugin, mais aucune donnée métier n'est chargée avant la garde.
+  if(window.grist) grist.ready({requiredAccess:"full"});
+  const allowed=await window.PmoAccess?.guard({module:"MIGRATION",label:"Migration PMO"});
+  if(!allowed)return;
+  init();
+  await initGristWidget();
+}
+bootMigrationProtected().catch(e=>{
+  console.error("Migration access boot",e);
+  window.PmoAccess?.guard({module:"MIGRATION",label:"Migration PMO"});
+});
 
 
 // ===== v3.1 : couche sémantique du mapping =====
