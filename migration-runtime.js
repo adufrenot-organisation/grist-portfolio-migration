@@ -353,8 +353,8 @@
   if(el("executeBtn")){
     el("executeBtn").onclick=null;
     el("executeBtn").addEventListener("click",()=>applySimulation());
-    el("executeBtn").dataset.runtime="3.4.1";
-    el("executeBtn").title="Exécution réelle active — runtime 3.4.1";
+    el("executeBtn").dataset.runtime="3.4.7";
+    el("executeBtn").title="Exécution réelle active — runtime 3.4.7";
   }
 
   window.addEventListener("resize",()=>{if(graphState.editorMode==="graph")graphDraw()});

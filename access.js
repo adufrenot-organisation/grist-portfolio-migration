@@ -1,10 +1,11 @@
 /*
- * pmo-access.js v1.2.0
+ * pmo-access.js v1.3.0
  * Garde d'accès applicatif pour widgets Grist.
  *
  * Sécurité réelle = ACL Grist sur les tables.
  * Cette garde bloque l'entrée du module et adapte l'UX.
  *
+ * v1.3.0 : identité autonome via access-identity.js / SESSIONS_UTILISATEURS.
  * v1.2.0 : page de refus volontairement générique.
  * Aucune information sur le profil, la matrice de droits ou la raison technique
  * n'est exposée à l'utilisateur final.
@@ -12,7 +13,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.0";
   const RIGHTS_TABLE = "DROITS_MODULES";
   const TEAM_TABLES = ["Team", "TEAM", "Equipe"];
   const EMAIL_FIELDS = ["email", "Email", "EMAIL", "Utilisateur_Email", "Mail"];

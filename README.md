@@ -175,7 +175,7 @@ dans le schéma Grist, et non à une liste codée en dur.
 - une ambiguïté ou une colonne inconnue bloque la simulation avant écriture.
 
 
-## v3.4.6 — Sécurité applicative
+## v3.4.7 — Sécurité applicative
 
 Le module Migration est protégé dès l'entrée par `access.js` v1.1.0.
 
@@ -190,3 +190,8 @@ Le module Cockpit RH n'a pas besoin de cette restriction applicative si son acc�
 
 ## v3.4.7 — Page de blocage simplifiée
 `access.js` v1.2.0 conserve la même garde d'accès mais n'affiche plus aucune information interne sur le contrôle de sécurité.
+
+
+## v3.4.7 — identité autonome du module Migration
+
+Le contrôle d’accès ne dépend plus d’un autre widget Presence déjà ouvert. `access-identity.js` tente d’abord d’identifier l’utilisateur via l’API Grist puis, si nécessaire, crée une ligne-sonde dans `SESSIONS_UTILISATEURS`. Les colonnes `Utilisateur_Email` et `Utilisateur_Nom` doivent être alimentées à la création par les trigger formulas Grist `user.Email` et `user.Name`. Le module transmis à `DROITS_MODULES` reste `MIGRATION`.
